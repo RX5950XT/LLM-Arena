@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@/types/models'
+import type { ChatMessage, ContentPart } from '@/types/models'
 import type { DebateSide } from '@/types/debate'
 import { OpenRouterClient } from './openrouter-client'
 import { useDebateStore } from '@/stores/debate-store'
@@ -114,7 +114,7 @@ export class DebateOrchestrator {
     return messages
   }
 
-  private async runJudge(index: number, userContent: string, maxRetries = 3): Promise<void> {
+  private async runJudge(index: number, userContent: string | ContentPart[], maxRetries = 3): Promise<void> {
     const judge = useDebateStore.getState().judges[index]
     if (!judge?.modelId) return
 
@@ -164,7 +164,8 @@ export class DebateOrchestrator {
       })
       .join('\n\n---\n\n')
 
-    const baseUserContent = `辯論議題：${store.topic}\n\n以下是完整的辯論記錄：\n\n${debateTranscript}\n\n請給出你的評分與分析。`
+    const baseText = `辯論議題：${store.topic}\n\n以下是完整的辯論記錄：\n\n${debateTranscript}\n\n請給出你的評分與分析。`
+    const baseUserContent = buildContentParts(baseText, store.attachments)
 
     // 第一階段：前三位裁判並行
     await Promise.allSettled([
@@ -186,9 +187,10 @@ export class DebateOrchestrator {
       .filter(Boolean)
       .join('\n\n---\n\n')
 
-    const finalUserContent = panelSection
+    const finalText = panelSection
       ? `辯論議題：${store.topic}\n\n以下是完整的辯論記錄：\n\n${debateTranscript}\n\n以下是其他三位裁判的評估意見：\n\n${panelSection}\n\n請給出你的綜合評判與最終總分。`
-      : baseUserContent
+      : baseText
+    const finalUserContent = buildContentParts(finalText, store.attachments)
 
     await this.runJudge(3, finalUserContent)
 

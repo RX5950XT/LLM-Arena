@@ -70,12 +70,13 @@ export function ArenaPage(): JSX.Element {
         .map((s, i) => `## 模型 ${String.fromCharCode(65 + i)}（${s.modelId}）\n${s.responseText}`)
         .join('\n\n---\n\n')
 
+      const judgeUserContent = buildContentParts(
+        `使用者問題：${store.userInput}\n\n以下是各模型的回應：\n\n${responseSummary}\n\n請進行評比分析。`,
+        currentState.attachments
+      )
       const judgeMessages: ChatMessage[] = [
         { role: 'system', content: currentState.judgeSystemPrompt },
-        {
-          role: 'user',
-          content: `使用者問題：${store.userInput}\n\n以下是各模型的回應：\n\n${responseSummary}\n\n請進行評比分析。`
-        }
+        { role: 'user', content: judgeUserContent }
       ]
 
       try {
