@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
+import { useSettingsStore } from '@/stores/settings-store'
 
 interface ModelSlotProps {
   label: string
@@ -8,6 +10,12 @@ interface ModelSlotProps {
   onModelIdChange: (value: string) => void
   onSystemPromptChange: (value: string) => void
   onReasoningChange?: (value: boolean) => void
+}
+
+interface DropdownPos {
+  top: number
+  left: number
+  width: number
 }
 
 export function ModelSlot({
@@ -20,6 +28,61 @@ export function ModelSlot({
   onReasoningChange
 }: ModelSlotProps): JSX.Element {
   const [showPrompt, setShowPrompt] = useState(false)
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [dropdownPos, setDropdownPos] = useState<DropdownPos>({ top: 0, left: 0, width: 0 })
+  const modelList = useSettingsStore((s) => s.modelList)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  const filtered = modelId.trim()
+    ? modelList.filter((m) => m.toLowerCase().includes(modelId.toLowerCase()))
+    : modelList
+
+  const updatePosition = useCallback(() => {
+    if (!inputRef.current) return
+    const rect = inputRef.current.getBoundingClientRect()
+    setDropdownPos({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width
+    })
+  }, [])
+
+  const openDropdown = useCallback(() => {
+    updatePosition()
+    setShowDropdown(true)
+  }, [updatePosition])
+
+  // Close on outside click
+  useEffect(() => {
+    if (!showDropdown) return
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (inputRef.current?.contains(target)) return
+      if (dropdownRef.current?.contains(target)) return
+      setShowDropdown(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showDropdown])
+
+  // Update position on scroll/resize while open
+  useEffect(() => {
+    if (!showDropdown) return
+    const handleReposition = () => updatePosition()
+    window.addEventListener('scroll', handleReposition, true)
+    window.addEventListener('resize', handleReposition)
+    return () => {
+      window.removeEventListener('scroll', handleReposition, true)
+      window.removeEventListener('resize', handleReposition)
+    }
+  }, [showDropdown, updatePosition])
+
+  const handleSelect = (model: string): void => {
+    onModelIdChange(model)
+    setShowDropdown(false)
+    inputRef.current?.blur()
+  }
 
   return (
     <div className="space-y-1.5">
@@ -51,12 +114,43 @@ export function ModelSlot({
         )}
       </div>
       <input
+        ref={inputRef}
         type="text"
         value={modelId}
-        onChange={(e) => onModelIdChange(e.target.value)}
+        onChange={(e) => {
+          onModelIdChange(e.target.value)
+          openDropdown()
+        }}
+        onFocus={openDropdown}
         placeholder="模型 ID（如 google/gemini-2.5-pro）"
         className="w-full px-3 py-1.5 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-600 font-mono"
       />
+      {showDropdown && filtered.length > 0 && createPortal(
+        <div
+          ref={dropdownRef}
+          style={{
+            position: 'fixed',
+            top: dropdownPos.top,
+            left: dropdownPos.left,
+            width: dropdownPos.width,
+            zIndex: 9999
+          }}
+          className="max-h-48 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-lg"
+        >
+          {filtered.map((model) => (
+            <button
+              key={model}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => handleSelect(model)}
+              className="w-full text-left px-3 py-1.5 text-sm font-mono text-slate-700 dark:text-slate-300 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:text-primary-700 dark:hover:text-primary-300 transition-colors cursor-pointer"
+            >
+              {model}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
       {showPrompt && (
         <textarea
           value={systemPrompt}
