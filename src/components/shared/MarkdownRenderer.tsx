@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
@@ -94,6 +95,8 @@ function preRenderMath(text: string): string {
 }
 
 export function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps): JSX.Element {
+  const rendered = useMemo(() => preRenderMath(content), [content])
+
   return (
     <div className={`prose prose-sm dark:prose-invert max-w-none ${className}`}>
       <ReactMarkdown
@@ -135,7 +138,7 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
           )
         }}
       >
-        {preRenderMath(content)}
+        {rendered}
       </ReactMarkdown>
     </div>
   )
