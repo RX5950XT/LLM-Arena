@@ -1,19 +1,29 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSettingsStore } from '@/stores/settings-store'
 
 export function SettingsPage(): JSX.Element {
-  const { apiUrl, apiKey, setApiUrl, setApiKey, saveSettings, loadSettings } =
-    useSettingsStore()
+  const { apiUrl, apiKey, setApiUrl, setApiKey, loadSettings } = useSettingsStore()
   const [saved, setSaved] = useState(false)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     loadSettings()
   }, [loadSettings])
 
-  const handleSave = async (): Promise<void> => {
-    await saveSettings()
+  const showSaved = (): void => {
     setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => setSaved(false), 2000)
+  }
+
+  const handleApiUrlChange = (value: string): void => {
+    setApiUrl(value)
+    showSaved()
+  }
+
+  const handleApiKeyChange = (value: string): void => {
+    setApiKey(value)
+    showSaved()
   }
 
   return (
@@ -31,7 +41,7 @@ export function SettingsPage(): JSX.Element {
             <input
               type="text"
               value={apiUrl}
-              onChange={(e) => setApiUrl(e.target.value)}
+              onChange={(e) => handleApiUrlChange(e.target.value)}
               className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-slate-800 dark:text-slate-200 font-mono transition-colors"
             />
           </div>
@@ -43,20 +53,18 @@ export function SettingsPage(): JSX.Element {
             <input
               type="password"
               value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              onChange={(e) => handleApiKeyChange(e.target.value)}
               placeholder="sk-or-..."
               className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-slate-800 dark:text-slate-200 font-mono transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-600"
             />
           </div>
 
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={handleSave}
-              className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white text-sm font-medium rounded-lg transition-colors cursor-pointer"
-            >
-              {saved ? '已儲存' : '儲存設定'}
-            </button>
+          <div className="pt-1 h-6 flex items-center">
+            {saved && (
+              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                已自動儲存
+              </span>
+            )}
           </div>
         </div>
 

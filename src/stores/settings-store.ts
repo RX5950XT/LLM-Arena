@@ -18,8 +18,16 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   apiKey: '',
   isLoaded: false,
 
-  setApiUrl: (apiUrl) => set({ apiUrl }),
-  setApiKey: (apiKey) => set({ apiKey }),
+  setApiUrl: (apiUrl) => {
+    set({ apiUrl })
+    const { apiKey } = get()
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ apiUrl, apiKey }))
+  },
+  setApiKey: (apiKey) => {
+    set({ apiKey })
+    const { apiUrl } = get()
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ apiUrl, apiKey }))
+  },
 
   loadSettings: () => {
     try {

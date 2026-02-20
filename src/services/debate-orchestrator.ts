@@ -114,6 +114,45 @@ export class DebateOrchestrator {
     return messages
   }
 
+  private async runJudge(index: number, userContent: string, maxRetries = 3): Promise<void> {
+    const judge = useDebateStore.getState().judges[index]
+    if (!judge?.modelId) return
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      if (this.abortController?.signal.aborted) return
+
+      useDebateStore.getState().updateJudge(index, { isStreaming: true, analysis: '', error: null })
+
+      const messages: ChatMessage[] = [
+        { role: 'system', content: judge.systemPrompt },
+        { role: 'user', content: userContent }
+      ]
+
+      try {
+        await this.client.streamChat(
+          judge.modelId,
+          messages,
+          {
+            onToken: (token) => useDebateStore.getState().appendJudgeToken(index, token),
+            onComplete: () => useDebateStore.getState().updateJudge(index, { isStreaming: false }),
+            onError: (error) => useDebateStore.getState().updateJudge(index, { isStreaming: false, error: error.message })
+          },
+          this.abortController?.signal
+        )
+        return
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return
+        const message = err instanceof Error ? err.message : String(err)
+        const isLast = attempt === maxRetries
+        useDebateStore.getState().updateJudge(index, {
+          isStreaming: false,
+          error: isLast ? `錯誤：${message}` : `第 ${attempt} 次失敗，${attempt} 秒後重試...`
+        })
+        if (!isLast) await new Promise((r) => setTimeout(r, attempt * 1000))
+      }
+    }
+  }
+
   private async runJudges(): Promise<void> {
     useDebateStore.getState().setStatus('judging')
     const store = useDebateStore.getState()
@@ -125,42 +164,13 @@ export class DebateOrchestrator {
       })
       .join('\n\n---\n\n')
 
-    const runJudge = (index: number, userContent: string) => {
-      const judge = useDebateStore.getState().judges[index]
-      if (!judge?.modelId) return Promise.resolve()
-
-      useDebateStore.getState().updateJudge(index, { isStreaming: true, analysis: '' })
-
-      const messages: ChatMessage[] = [
-        { role: 'system', content: judge.systemPrompt },
-        { role: 'user', content: userContent }
-      ]
-
-      return this.client
-        .streamChat(
-          judge.modelId,
-          messages,
-          {
-            onToken: (token) => useDebateStore.getState().appendJudgeToken(index, token),
-            onComplete: () => useDebateStore.getState().updateJudge(index, { isStreaming: false }),
-            onError: (error) => useDebateStore.getState().updateJudge(index, { isStreaming: false, error: error.message })
-          },
-          this.abortController?.signal
-        )
-        .catch((err) => {
-          if (err instanceof Error && err.name !== 'AbortError') {
-            useDebateStore.getState().updateJudge(index, { isStreaming: false, error: err.message })
-          }
-        })
-    }
-
     const baseUserContent = `辯論議題：${store.topic}\n\n以下是完整的辯論記錄：\n\n${debateTranscript}\n\n請給出你的評分與分析。`
 
     // 第一階段：前三位裁判並行
     await Promise.allSettled([
-      runJudge(0, baseUserContent),
-      runJudge(1, baseUserContent),
-      runJudge(2, baseUserContent)
+      this.runJudge(0, baseUserContent),
+      this.runJudge(1, baseUserContent),
+      this.runJudge(2, baseUserContent)
     ])
 
     if (this.abortController?.signal.aborted) {
@@ -180,7 +190,7 @@ export class DebateOrchestrator {
       ? `辯論議題：${store.topic}\n\n以下是完整的辯論記錄：\n\n${debateTranscript}\n\n以下是其他三位裁判的評估意見：\n\n${panelSection}\n\n請給出你的綜合評判與最終總分。`
       : baseUserContent
 
-    await runJudge(3, finalUserContent)
+    await this.runJudge(3, finalUserContent)
 
     useDebateStore.getState().setStatus('completed')
   }
