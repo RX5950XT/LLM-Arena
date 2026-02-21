@@ -1,5 +1,10 @@
-import { NavLink } from 'react-router-dom'
+import { useState } from 'react'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { useThemeStore } from '@/stores/theme-store'
+import { useHistoryStore } from '@/stores/history-store'
+import { useArenaStore } from '@/stores/arena-store'
+import { useDebateStore } from '@/stores/debate-store'
+import type { ArenaHistoryEntry, DebateHistoryEntry } from '@/types/history'
 
 function IconArena(): JSX.Element {
   return (
@@ -42,17 +47,161 @@ function IconMoon(): JSX.Element {
   )
 }
 
-const navItems = [
-  { path: '/', label: '模型競技場', icon: <IconArena /> },
-  { path: '/debate', label: 'AI 辯論', icon: <IconDebate /> },
-  { path: '/settings', label: '設定', icon: <IconSettings /> }
-]
+function IconPlus(): JSX.Element {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+    </svg>
+  )
+}
+
+function formatRelativeTime(timestamp: number): string {
+  const diff = Date.now() - timestamp
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+  if (minutes < 1) return '剛剛'
+  if (minutes < 60) return `${minutes} 分鐘前`
+  if (hours < 24) return `${hours} 小時前`
+  if (days < 30) return `${days} 天前`
+  return new Date(timestamp).toLocaleDateString('zh-TW')
+}
+
+interface HistoryListProps {
+  type: 'arena' | 'debate'
+}
+
+function HistoryList({ type }: HistoryListProps): JSX.Element {
+  const navigate = useNavigate()
+  const historyStore = useHistoryStore()
+  const arenaStore = useArenaStore()
+  const debateStore = useDebateStore()
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+
+  const history = type === 'arena' ? historyStore.arenaHistory : historyStore.debateHistory
+  const activeId = type === 'arena' ? historyStore.activeArenaId : historyStore.activeDebateId
+
+  const handleLoad = (entry: ArenaHistoryEntry | DebateHistoryEntry): void => {
+    if (type === 'arena') {
+      arenaStore.restoreFromHistory(entry as ArenaHistoryEntry)
+      historyStore.setActiveArenaId(entry.id)
+      navigate('/')
+    } else {
+      debateStore.restoreFromHistory(entry as DebateHistoryEntry)
+      historyStore.setActiveDebateId(entry.id)
+      navigate('/debate')
+    }
+  }
+
+  const handleNewSession = (): void => {
+    if (type === 'arena') {
+      arenaStore.resetAll()
+      historyStore.setActiveArenaId(null)
+      navigate('/')
+    } else {
+      debateStore.reset()
+      historyStore.setActiveDebateId(null)
+      navigate('/debate')
+    }
+  }
+
+  const handleDelete = (e: React.MouseEvent, id: string): void => {
+    e.stopPropagation()
+    if (type === 'arena') {
+      historyStore.deleteArena(id)
+    } else {
+      historyStore.deleteDebate(id)
+    }
+  }
+
+  return (
+    <div className="mt-1 mb-1.5">
+      {/* 新對話按鈕 - 與導覽項目對齊 */}
+      <button
+        type="button"
+        onClick={handleNewSession}
+        className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium text-primary-600 dark:text-primary-400 hover:bg-primary-500/5 dark:hover:bg-primary-500/5 transition-colors cursor-pointer"
+        title="清除目前載入的紀錄，開始新對話"
+      >
+        <span className="shrink-0"><IconPlus /></span>
+        <span>新對話</span>
+      </button>
+
+      {/* 歷史項目 */}
+      {history.length === 0 ? (
+        <p className="text-[11px] text-slate-400 dark:text-slate-600 text-center py-3">
+          尚無歷史紀錄
+        </p>
+      ) : (
+        <ul className="mt-0.5 space-y-px">
+          {history.map((entry) => (
+            <li
+              key={entry.id}
+              className={`group flex items-center gap-1.5 pl-5 pr-2 py-1.5 rounded-lg cursor-pointer transition-colors ${
+                entry.id === activeId
+                  ? 'bg-primary-500/10'
+                  : 'hover:bg-slate-200/60 dark:hover:bg-slate-800/60'
+              }`}
+              onMouseEnter={() => setHoveredId(entry.id)}
+              onMouseLeave={() => setHoveredId(null)}
+              onClick={() => handleLoad(entry)}
+            >
+              {/* 左邊指示線 */}
+              <div className={`w-0.5 self-stretch rounded-full shrink-0 ${
+                entry.id === activeId
+                  ? 'bg-primary-500'
+                  : 'bg-slate-300 dark:bg-slate-700'
+              }`} />
+              <div className="flex-1 min-w-0 pl-1.5">
+                <p className={`text-xs truncate leading-snug ${
+                  entry.id === activeId
+                    ? 'font-medium text-primary-700 dark:text-primary-300'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}>
+                  {entry.title}
+                </p>
+                <p className="text-[10px] text-slate-400 dark:text-slate-600 mt-0.5 leading-none">
+                  {formatRelativeTime(entry.updatedAt)}
+                </p>
+              </div>
+              {hoveredId === entry.id && (
+                <button
+                  type="button"
+                  onClick={(e) => handleDelete(e, entry.id)}
+                  className="shrink-0 p-0.5 text-slate-400 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-colors cursor-pointer"
+                  title="刪除此紀錄"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* 筆數資訊 */}
+      {history.length > 0 && (
+        <p className="text-[10px] text-slate-400 dark:text-slate-600 pl-5 pt-1.5">
+          {history.length} / 50
+        </p>
+      )}
+    </div>
+  )
+}
 
 export function Sidebar(): JSX.Element {
   const { theme, toggleTheme } = useThemeStore()
+  const [expanded, setExpanded] = useState<'arena' | 'debate' | null>(null)
+
+  const toggleExpanded = (type: 'arena' | 'debate'): void => {
+    setExpanded((prev) => (prev === type ? null : type))
+  }
 
   return (
     <aside className="w-52 shrink-0 bg-slate-100 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col">
+      {/* Logo */}
       <div className="px-4 py-5 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-md bg-primary-500 flex items-center justify-center">
@@ -69,12 +218,14 @@ export function Sidebar(): JSX.Element {
         </p>
       </div>
 
-      <nav className="flex-1 p-2 space-y-0.5">
-        {navItems.map((item) => (
+      {/* 導覽列 */}
+      <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
+        {/* 模型競技場 */}
+        <div>
           <NavLink
-            key={item.path}
-            to={item.path}
-            end={item.path === '/'}
+            to="/"
+            end
+            onClick={() => toggleExpanded('arena')}
             className={({ isActive }) =>
               `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
                 isActive
@@ -83,14 +234,64 @@ export function Sidebar(): JSX.Element {
               }`
             }
           >
-            <span className="shrink-0">{item.icon}</span>
-            <span>{item.label}</span>
+            <span className="shrink-0"><IconArena /></span>
+            <span className="flex-1">模型競技場</span>
+            <span className="shrink-0 p-0.5 text-slate-400 dark:text-slate-600">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className={`w-3 h-3 transition-transform duration-200 ${expanded === 'arena' ? 'rotate-180' : ''}`}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+              </svg>
+            </span>
           </NavLink>
-        ))}
+          {expanded === 'arena' && <HistoryList type="arena" />}
+        </div>
+
+        {/* AI 辯論 */}
+        <div>
+          <NavLink
+            to="/debate"
+            onClick={() => toggleExpanded('debate')}
+            className={({ isActive }) =>
+              `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                isActive
+                  ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
+              }`
+            }
+          >
+            <span className="shrink-0"><IconDebate /></span>
+            <span className="flex-1">AI 辯論</span>
+            <span className="shrink-0 p-0.5 text-slate-400 dark:text-slate-600">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className={`w-3 h-3 transition-transform duration-200 ${expanded === 'debate' ? 'rotate-180' : ''}`}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+              </svg>
+            </span>
+          </NavLink>
+          {expanded === 'debate' && <HistoryList type="debate" />}
+        </div>
+
+        {/* 分隔線 */}
+        <div className="!my-2 border-t border-slate-200 dark:border-slate-800" />
+
+        {/* 設定 */}
+        <NavLink
+          to="/settings"
+          className={({ isActive }) =>
+            `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+              isActive
+                ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
+            }`
+          }
+        >
+          <span className="shrink-0"><IconSettings /></span>
+          <span>設定</span>
+        </NavLink>
       </nav>
 
+      {/* 主題切換 */}
       <div className="p-2 border-t border-slate-200 dark:border-slate-800">
         <button
+          type="button"
           onClick={toggleTheme}
           className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-slate-500 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-300 transition-colors cursor-pointer"
         >

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { DEFAULT_API_URL } from '@/constants/config'
 
 const STORAGE_KEY = 'llm-arena-settings'
+const DEFAULT_TITLE_MODEL = 'qwen/qwen3-vl-8b-instruct'
 
 const DEFAULT_MODEL_LIST: string[] = [
   'google/gemini-3-flash-preview',
@@ -17,20 +18,23 @@ interface SettingsState {
   apiUrl: string
   apiKey: string
   modelList: string[]
+  titleModelId: string
   isLoaded: boolean
   setApiUrl: (url: string) => void
   setApiKey: (key: string) => void
+  setTitleModelId: (modelId: string) => void
   addModel: (modelId: string) => void
   removeModel: (modelId: string) => void
   loadSettings: () => void
   saveSettings: () => void
 }
 
-function persistSettings(state: { apiUrl: string; apiKey: string; modelList: string[] }): void {
+function persistSettings(state: { apiUrl: string; apiKey: string; modelList: string[]; titleModelId: string }): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     apiUrl: state.apiUrl,
     apiKey: state.apiKey,
-    modelList: state.modelList
+    modelList: state.modelList,
+    titleModelId: state.titleModelId
   }))
 }
 
@@ -38,6 +42,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   apiUrl: DEFAULT_API_URL,
   apiKey: '',
   modelList: DEFAULT_MODEL_LIST,
+  titleModelId: DEFAULT_TITLE_MODEL,
   isLoaded: false,
 
   setApiUrl: (apiUrl) => {
@@ -47,6 +52,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setApiKey: (apiKey) => {
     set({ apiKey })
     persistSettings({ ...get(), apiKey })
+  },
+  setTitleModelId: (titleModelId) => {
+    set({ titleModelId })
+    persistSettings({ ...get(), titleModelId })
   },
 
   addModel: (modelId) => {
@@ -74,6 +83,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           apiUrl: parsed.apiUrl || DEFAULT_API_URL,
           apiKey: parsed.apiKey || '',
           modelList: Array.isArray(parsed.modelList) ? parsed.modelList : DEFAULT_MODEL_LIST,
+          titleModelId: parsed.titleModelId || DEFAULT_TITLE_MODEL,
           isLoaded: true
         })
       } else {

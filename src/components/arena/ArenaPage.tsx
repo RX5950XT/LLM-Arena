@@ -1,11 +1,14 @@
 import { useCallback } from 'react'
 import { useArenaStore } from '@/stores/arena-store'
 import { useSettingsStore } from '@/stores/settings-store'
+import { useHistoryStore } from '@/stores/history-store'
 import { OpenRouterClient } from '@/services/openrouter-client'
 import { StreamingManager } from '@/services/streaming-manager'
 import { buildContentParts } from '@/services/file-handler'
+import { generateTitle } from '@/services/title-generator'
 import type { ChatMessage } from '@/types/models'
 import type { StreamTask } from '@/services/streaming-manager'
+import type { StoredAttachment } from '@/types/history'
 import { ModelSlot } from '@/components/shared/ModelSlot'
 import { DropZone } from '@/components/shared/DropZone'
 import { StreamingText } from '@/components/shared/StreamingText'
@@ -101,6 +104,41 @@ export function ArenaPage(): JSX.Element {
     }
 
     store.setIsSending(false)
+
+    // 背景：生成標題並儲存歷史紀錄
+    void (async () => {
+      const finalState = useArenaStore.getState()
+      const settings = useSettingsStore.getState()
+      const title = await generateTitle(
+        settings.apiUrl,
+        settings.apiKey,
+        settings.titleModelId,
+        finalState.userInput,
+        finalState.attachments
+      )
+      const storedAttachments: StoredAttachment[] = finalState.attachments.map((a) => ({
+        ...a,
+        content: a.type === 'image' ? '' : a.content,
+        isImagePlaceholder: a.type === 'image'
+      }))
+      useHistoryStore.getState().saveArena({
+        title,
+        slotCount: finalState.slotCount,
+        slots: finalState.slots.map((s) => ({
+          id: s.id,
+          modelId: s.modelId,
+          systemPrompt: s.systemPrompt,
+          reasoning: s.reasoning ?? false,
+          responseText: s.responseText,
+          error: s.error
+        })),
+        userInput: finalState.userInput,
+        attachments: storedAttachments,
+        judgeModelId: finalState.judgeModelId,
+        judgeSystemPrompt: finalState.judgeSystemPrompt,
+        judgeResult: finalState.judgeResult
+      })
+    })()
   }, [store, apiUrl, apiKey])
 
   const hasResponses = store.slots.some((s) => s.responseText || s.isStreaming)

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { DebateMessage, DebateStatus, DebateSide, JudgeResult } from '@/types/debate'
 import type { Attachment, ModelConfig } from '@/types/models'
+import type { DebateHistoryEntry } from '@/types/history'
 import {
   DEFAULT_FOR_PROMPT,
   DEFAULT_AGAINST_PROMPT,
@@ -26,6 +27,7 @@ interface DebateActions {
   appendJudgeToken: (index: number, token: string) => void
   reset: () => void
   resetDebate: () => void
+  restoreFromHistory: (entry: DebateHistoryEntry) => void
 }
 
 interface DebateStore {
@@ -145,5 +147,30 @@ export const useDebateStore = create<DebateStore & DebateActions>((set, get) => 
         isStreaming: false,
         error: null
       }))
+    }),
+
+  restoreFromHistory: (entry) => {
+    const attachments: Attachment[] = entry.attachments
+      .filter((a) => !a.isImagePlaceholder)
+      .map(({ isImagePlaceholder: _, ...rest }) => rest)
+    const currentJudges = get().judges
+    const restoredJudges: JudgeResult[] = currentJudges.map((j, i) => {
+      const saved = entry.judges[i]
+      if (!saved) return j
+      return { ...j, modelId: saved.modelId, systemPrompt: saved.systemPrompt, analysis: saved.analysis, isStreaming: false, error: null }
     })
+    set({
+      topic: entry.topic,
+      totalRounds: entry.totalRounds,
+      forModel: entry.forModel as ModelConfig,
+      againstModel: entry.againstModel as ModelConfig,
+      attachments,
+      messages: entry.messages as DebateMessage[],
+      judges: restoredJudges,
+      status: 'idle',
+      currentRound: 0,
+      currentSpeaker: null,
+      currentStreamText: ''
+    })
+  }
 }))

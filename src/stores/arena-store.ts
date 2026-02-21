@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { ArenaSlot } from '@/types/arena'
 import type { Attachment } from '@/types/models'
+import type { ArenaHistoryEntry } from '@/types/history'
 import { ARENA_JUDGE_DEFAULT_PROMPT } from '@/constants/default-prompts'
 
 function createSlot(index: number): ArenaSlot {
@@ -28,6 +29,8 @@ interface ArenaActions {
   setIsJudging: (isJudging: boolean) => void
   setIsSending: (isSending: boolean) => void
   resetResponses: () => void
+  resetAll: () => void
+  restoreFromHistory: (entry: ArenaHistoryEntry) => void
 }
 
 interface ArenaStore {
@@ -105,5 +108,44 @@ export const useArenaStore = create<ArenaStore & ArenaActions>((set, get) => ({
       isJudging: false,
       isSending: false
     }))
+  },
+
+  resetAll: () => {
+    set((state) => ({
+      slots: Array.from({ length: state.slotCount }, (_, i) => createSlot(i)),
+      userInput: '',
+      attachments: [],
+      judgeModelId: '',
+      judgeSystemPrompt: ARENA_JUDGE_DEFAULT_PROMPT,
+      judgeResult: null,
+      isJudging: false,
+      isSending: false
+    }))
+  },
+
+  restoreFromHistory: (entry) => {
+    const restoredSlots: ArenaSlot[] = entry.slots.map((s, i) => ({
+      id: `slot-${i}`,
+      modelId: s.modelId,
+      systemPrompt: s.systemPrompt,
+      reasoning: s.reasoning,
+      responseText: s.responseText,
+      isStreaming: false,
+      error: s.error
+    }))
+    const attachments: Attachment[] = entry.attachments
+      .filter((a) => !a.isImagePlaceholder)
+      .map(({ isImagePlaceholder: _, ...rest }) => rest)
+    set({
+      slotCount: entry.slotCount,
+      slots: restoredSlots,
+      userInput: entry.userInput,
+      attachments,
+      judgeModelId: entry.judgeModelId,
+      judgeSystemPrompt: entry.judgeSystemPrompt,
+      judgeResult: entry.judgeResult,
+      isJudging: false,
+      isSending: false
+    })
   }
 }))

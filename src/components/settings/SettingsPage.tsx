@@ -1,11 +1,19 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSettingsStore } from '@/stores/settings-store'
+import { useHistoryStore } from '@/stores/history-store'
+import type { HistoryExport } from '@/types/history'
 
 export function SettingsPage(): JSX.Element {
-  const { apiUrl, apiKey, modelList, setApiUrl, setApiKey, addModel, removeModel, loadSettings } = useSettingsStore()
+  const {
+    apiUrl, apiKey, modelList, titleModelId,
+    setApiUrl, setApiKey, setTitleModelId, addModel, removeModel, loadSettings
+  } = useSettingsStore()
+  const historyStore = useHistoryStore()
   const [saved, setSaved] = useState(false)
   const [newModelId, setNewModelId] = useState('')
+  const [importError, setImportError] = useState<string | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     loadSettings()
@@ -24,6 +32,11 @@ export function SettingsPage(): JSX.Element {
 
   const handleApiKeyChange = (value: string): void => {
     setApiKey(value)
+    showSaved()
+  }
+
+  const handleTitleModelChange = (value: string): void => {
+    setTitleModelId(value)
     showSaved()
   }
 
@@ -47,8 +60,51 @@ export function SettingsPage(): JSX.Element {
     }
   }
 
+  const handleExport = (): void => {
+    const data = historyStore.exportHistory()
+    const json = JSON.stringify(data, null, 2)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `llm-arena-history-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleImportClick = (): void => {
+    setImportError(null)
+    fileInputRef.current?.click()
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string) as HistoryExport
+        if (data.version !== 1 || !Array.isArray(data.arena) || !Array.isArray(data.debate)) {
+          setImportError('檔案格式不正確')
+          return
+        }
+        historyStore.importHistory(data)
+        setImportError(null)
+        showSaved()
+      } catch {
+        setImportError('無法解析 JSON 檔案')
+      }
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
+  const totalArena = historyStore.arenaHistory.length
+  const totalDebate = historyStore.debateHistory.length
+
   return (
-    <div className="h-full p-5">
+    <div className="h-full p-5 overflow-y-auto">
       <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-5">設定</h2>
 
       <div className="flex gap-5">
@@ -83,6 +139,22 @@ export function SettingsPage(): JSX.Element {
               />
             </div>
 
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                話題命名模型
+              </label>
+              <input
+                type="text"
+                value={titleModelId}
+                onChange={(e) => handleTitleModelChange(e.target.value)}
+                placeholder="qwen/qwen3-vl-8b-instruct"
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-slate-800 dark:text-slate-200 font-mono transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-600"
+              />
+              <p className="text-[11px] text-slate-400 dark:text-slate-600">
+                用於自動為對話紀錄生成標題，預設使用視覺語言模型以支援圖片辨識。
+              </p>
+            </div>
+
             <div className="pt-1 h-6 flex items-center">
               {saved && (
                 <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
@@ -90,6 +162,43 @@ export function SettingsPage(): JSX.Element {
                 </span>
               )}
             </div>
+          </div>
+
+          {/* 對話紀錄管理 */}
+          <div className="p-5 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900/50 space-y-3">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider font-mono">對話紀錄</h3>
+            <div className="text-xs text-slate-500 dark:text-slate-400 space-y-1">
+              <p>競技場紀錄：{totalArena} / 50 筆</p>
+              <p>辯論紀錄：{totalDebate} / 50 筆</p>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleExport}
+                disabled={totalArena === 0 && totalDebate === 0}
+                className="flex-1 px-3 py-2 text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300 rounded-lg transition-colors cursor-pointer"
+              >
+                匯出 JSON
+              </button>
+              <button
+                type="button"
+                onClick={handleImportClick}
+                className="flex-1 px-3 py-2 text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg transition-colors cursor-pointer"
+              >
+                匯入 JSON
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                title="選擇要匯入的對話紀錄 JSON 檔案"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+            </div>
+            {importError && (
+              <p className="text-xs text-red-500 dark:text-red-400">{importError}</p>
+            )}
           </div>
 
           <div className="p-5 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900/50 space-y-3">

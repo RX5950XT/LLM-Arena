@@ -1,12 +1,15 @@
 import { useCallback, useRef } from 'react'
 import { useDebateStore } from '@/stores/debate-store'
 import { useSettingsStore } from '@/stores/settings-store'
+import { useHistoryStore } from '@/stores/history-store'
 import { OpenRouterClient } from '@/services/openrouter-client'
 import { DebateOrchestrator } from '@/services/debate-orchestrator'
+import { generateTitle } from '@/services/title-generator'
 import { ModelSlot } from '@/components/shared/ModelSlot'
 import { DropZone } from '@/components/shared/DropZone'
 import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer'
 import { MIN_DEBATE_ROUNDS, MAX_DEBATE_ROUNDS } from '@/constants/config'
+import type { StoredAttachment } from '@/types/history'
 
 export function DebatePage(): JSX.Element {
   const store = useDebateStore()
@@ -31,6 +34,40 @@ export function DebatePage(): JSX.Element {
     const client = new OpenRouterClient(apiUrl, apiKey)
     orchestratorRef.current = new DebateOrchestrator(client)
     await orchestratorRef.current.startDebate()
+
+    // 背景：生成標題並儲存歷史紀錄
+    void (async () => {
+      const finalState = useDebateStore.getState()
+      if (finalState.messages.length === 0) return
+      const settings = useSettingsStore.getState()
+      const title = await generateTitle(
+        settings.apiUrl,
+        settings.apiKey,
+        settings.titleModelId,
+        finalState.topic,
+        finalState.attachments
+      )
+      const storedAttachments: StoredAttachment[] = finalState.attachments.map((a) => ({
+        ...a,
+        content: a.type === 'image' ? '' : a.content,
+        isImagePlaceholder: a.type === 'image'
+      }))
+      useHistoryStore.getState().saveDebate({
+        title,
+        topic: finalState.topic,
+        totalRounds: finalState.totalRounds,
+        forModel: finalState.forModel,
+        againstModel: finalState.againstModel,
+        attachments: storedAttachments,
+        messages: finalState.messages,
+        judges: finalState.judges.map((j) => ({
+          name: j.name,
+          modelId: j.modelId,
+          systemPrompt: j.systemPrompt,
+          analysis: j.analysis
+        }))
+      })
+    })()
   }, [store, apiUrl, apiKey])
 
   const handleStop = useCallback(() => {
@@ -97,6 +134,7 @@ export function DebatePage(): JSX.Element {
           <div className="flex items-center gap-2">
             <input
               type="range"
+              title="辯論回合數"
               min={MIN_DEBATE_ROUNDS}
               max={MAX_DEBATE_ROUNDS}
               value={store.totalRounds}

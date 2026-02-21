@@ -7,7 +7,6 @@
 ## 目錄
 
 - [功能特色](#功能特色)
-- [畫面截圖](#畫面截圖)
 - [技術棧](#技術棧)
 - [專案結構](#專案結構)
 - [快速開始](#快速開始)
@@ -15,6 +14,7 @@
   - [設定頁面](#設定頁面)
   - [模型競技場](#模型競技場)
   - [AI 辯論](#ai-辯論)
+  - [對話紀錄](#對話紀錄)
 - [架構設計](#架構設計)
   - [資料流](#資料流)
   - [串流處理](#串流處理)
@@ -46,6 +46,15 @@
   3. **說服力裁判**：修辭技巧、語言說服力與情感訴求
   4. **綜合評判裁判**：整合三位評審意見，給出最終總評與勝負判定
 
+### 對話紀錄
+
+- **自動儲存**：競技場與辯論的對話在完成後自動儲存至 localStorage
+- **AI 生成標題**：使用 Vision Language Model 自動為每筆紀錄生成摘要標題（支援圖片辨識）
+- **側邊欄展開式清單**：點擊「模型競技場」或「AI 辯論」導覽項目即可展開歷史清單
+- **繼續對話**：從歷史紀錄載入後，再次發送會更新原有紀錄，而非建立新紀錄
+- **匯出 / 匯入**：可在設定頁面將所有紀錄匯出為 JSON 檔案，或從 JSON 合併匯入（去重）
+- **上限 50 筆**：超出時自動移除最舊的紀錄
+
 ### 通用功能
 
 - **Markdown 渲染**：完整支援 GFM 語法、程式碼高亮、表格
@@ -53,7 +62,7 @@
 - **多媒體附件**：拖放上傳圖片（PNG / JPEG / GIF / WebP）或文字檔案（TXT / MD / JSON / CSV），附件最大 20 MB
 - **模型清單管理**：在設定頁面維護常用模型清單，輸入框可直接下拉選取
 - **深色 / 淺色主題**：一鍵切換，設定持久化
-- **本地持久化**：API Key、URL、模型清單均自動儲存至 localStorage
+- **本地持久化**：API Key、URL、模型清單、對話紀錄均儲存至 localStorage
 
 ---
 
@@ -83,21 +92,25 @@ LLM_Arena/
 ├── tailwind.config.ts
 ├── tsconfig.json
 ├── postcss.config.cjs
+├── README.md
+│
+├── Docs/
+│   └── DEVLOG.md                # 開發紀錄
 │
 └── src/
     ├── main.tsx                     # 應用程式入口
-    ├── App.tsx                      # 路由設定 + 初始化
+    ├── App.tsx                      # 路由設定 + 初始化（含 loadHistory）
     │
     ├── components/
     │   ├── layout/
     │   │   ├── MainLayout.tsx       # 主佈局（Sidebar + 內容區）
-    │   │   └── Sidebar.tsx          # 側邊欄導航 + 主題切換
+    │   │   └── Sidebar.tsx          # 側邊欄導航 + 歷史展開面板 + 主題切換
     │   ├── arena/
-    │   │   └── ArenaPage.tsx        # 模型競技場頁面（220 行）
+    │   │   └── ArenaPage.tsx        # 模型競技場頁面
     │   ├── debate/
-    │   │   └── DebatePage.tsx       # AI 辯論頁面（242 行）
+    │   │   └── DebatePage.tsx       # AI 辯論頁面
     │   ├── settings/
-    │   │   └── SettingsPage.tsx     # 設定頁面
+    │   │   └── SettingsPage.tsx     # 設定頁面（含匯出 / 匯入 JSON）
     │   └── shared/
     │       ├── ModelSlot.tsx        # 模型插槽（輸入 + 下拉 + System Prompt）
     │       ├── DropZone.tsx         # 拖放上傳區域
@@ -108,18 +121,21 @@ LLM_Arena/
     │   ├── openrouter-client.ts     # OpenRouter API 客戶端（streamChat / chat）
     │   ├── streaming-manager.ts     # 多模型並行串流管理
     │   ├── debate-orchestrator.ts   # 辯論回合編排引擎
-    │   └── file-handler.ts          # 檔案處理（base64 轉換、內容組裝）
+    │   ├── file-handler.ts          # 檔案處理（base64 轉換、內容組裝）
+    │   └── title-generator.ts       # AI 標題生成（呼叫 Vision LLM）
     │
     ├── stores/
-    │   ├── arena-store.ts           # 競技場狀態
-    │   ├── debate-store.ts          # 辯論狀態
-    │   ├── settings-store.ts        # 設定狀態（API 設定 + 模型清單）
+    │   ├── arena-store.ts           # 競技場狀態（含 restoreFromHistory）
+    │   ├── debate-store.ts          # 辯論狀態（含 restoreFromHistory）
+    │   ├── history-store.ts         # 對話紀錄持久化（localStorage，上限 50 筆）
+    │   ├── settings-store.ts        # 設定狀態（API 設定 + 模型清單 + titleModelId）
     │   └── theme-store.ts           # 主題狀態
     │
     ├── types/
     │   ├── models.ts                # ChatMessage、Attachment、StreamCallbacks 等
     │   ├── arena.ts                 # ArenaSlot、ArenaState
-    │   └── debate.ts                # DebateMessage、JudgeResult、DebateState
+    │   ├── debate.ts                # DebateMessage、JudgeResult、DebateState
+    │   └── history.ts               # StoredAttachment、ArenaHistoryEntry、DebateHistoryEntry、HistoryExport
     │
     ├── constants/
     │   ├── config.ts                # 上傳限制、插槽數量上下限等
@@ -174,10 +190,11 @@ npm run preview    # 本地預覽生產版本
 
 #### OpenRouter API 設定
 
-| 欄位    | 說明                                                                         |
-| ------- | ---------------------------------------------------------------------------- |
-| API URL | OpenRouter 端點，預設為 `https://openrouter.ai/api/v1`                     |
-| API Key | 前往[openrouter.ai/keys](https://openrouter.ai/keys) 取得，格式為 `sk-or-...` |
+| 欄位         | 說明                                                                         |
+| ------------ | ---------------------------------------------------------------------------- |
+| API URL      | OpenRouter 端點，預設為 `https://openrouter.ai/api/v1`                     |
+| API Key      | 前往 [openrouter.ai/keys](https://openrouter.ai/keys) 取得，格式為 `sk-or-...` |
+| 話題命名模型 | 用於自動生成對話標題的模型，預設為 `qwen/qwen3-vl-8b-instruct`（Vision LLM）|
 
 所有設定均即時儲存，無需手動按下儲存按鈕。
 
@@ -189,19 +206,14 @@ npm run preview    # 本地預覽生產版本
 - 滑鼠移至模型列表項目可顯示刪除按鈕
 - 此清單會同步到競技場與辯論頁面的所有模型輸入框，可直接下拉選取
 
-**預設模型清單：**
-
-```
-google/gemini-3-flash-preview
-google/gemini-3.1-pro-preview
-moonshotai/kimi-k2.5
-z-ai/glm-5
-minimax/minimax-m2.5
-qwen/qwen3.5-397b-a17b
-deepseek/deepseek-v3.2
-```
-
 > 可至 [openrouter.ai/models](https://openrouter.ai/models) 查詢所有可用模型 ID。
+
+#### 對話紀錄管理
+
+設定頁面左側的「對話紀錄」區塊顯示目前儲存的筆數，並提供：
+
+- **匯出 JSON**：將所有競技場與辯論紀錄匯出為單一 JSON 檔案（`llm-arena-history-YYYY-MM-DD.json`）
+- **匯入 JSON**：選取 JSON 檔案後，以合併（去重）方式匯入，不會覆蓋現有紀錄
 
 ---
 
@@ -232,8 +244,8 @@ deepseek/deepseek-v3.2
 
 #### 快捷鍵
 
-| 快捷鍵           | 功能         |
-| ---------------- | ------------ |
+| 快捷鍵         | 功能         |
+| -------------- | ------------ |
 | `Ctrl + Enter` | 發送問題     |
 | `Escape`       | 停止所有串流 |
 
@@ -274,6 +286,26 @@ deepseek/deepseek-v3.2
 
 ---
 
+### 對話紀錄
+
+競技場與辯論的每次對話在**所有串流（含裁判）完成後**自動儲存，不影響 UI 回應速度。
+
+#### 側邊欄歷史面板
+
+點擊「模型競技場」或「AI 辯論」導覽項目，右側箭頭指示展開 / 收合狀態：
+
+- **展開**：顯示該功能的歷史紀錄清單（標題 + 相對時間）
+- **點擊紀錄**：還原所有設定與回應內容至頁面，可直接再次發送
+- **再次發送**：會更新現有紀錄，而非新增紀錄
+- **「+ 新對話」按鈕**：清除所有輸入、回應、附件與裁判結果，開始全新對話
+- **刪除**：滑鼠移至紀錄項目，點擊 × 刪除單筆
+
+#### 標題自動生成
+
+紀錄標題由「話題命名模型」根據問題或議題文字（含圖片）自動生成，最長 40 字。若 API 呼叫失敗，則截取輸入文字前 40 字作為備用標題。
+
+---
+
 ## 架構設計
 
 ### 資料流
@@ -294,11 +326,13 @@ StreamingManager.streamAll(tasks)
     ├── 並行啟動 Promise.allSettled()
     │   ├── Task A → OpenRouterClient.streamChat() → appendToken(A, token)
     │   ├── Task B → OpenRouterClient.streamChat() → appendToken(B, token)
-    │   ├── Task C → ...
-    │   └── Task D → ...
+    │   └── ...
     │
     ▼（全部完成）
 可選：OpenRouterClient.streamChat(judgeModel) → setJudgeResult(text)
+    │
+    ▼（背景 void IIFE）
+generateTitle() → historyStore.saveArena()
 ```
 
 #### 辯論資料流
@@ -310,13 +344,16 @@ StreamingManager.streamAll(tasks)
 DebateOrchestrator.startDebate()
     │
     ▼ 回合迴圈
-    ├── speak('for')   → 正方串流 → appendStreamToken() → appendMessage()
+    ├── speak('for')     → 正方串流 → appendStreamToken() → appendMessage()
     └── speak('against') → 反方串流 → appendStreamToken() → appendMessage()
     │
     ▼（辯論結束）
 runJudges()
     ├── 並行啟動前三位評判（邏輯、論據、說服力）
     └── 三位完成後 → 啟動綜合評判裁判
+    │
+    ▼（背景 void IIFE）
+generateTitle() → historyStore.saveDebate()
 ```
 
 ### 串流處理
@@ -347,14 +384,21 @@ callbacks.onError()       ──→ 錯誤處理
 
 ### 狀態管理
 
-所有狀態透過 Zustand 管理，分為四個獨立 Store：
+所有狀態透過 Zustand 管理，分為五個獨立 Store：
 
-| Store              | 持久化       | 主要職責                     |
-| ------------------ | ------------ | ---------------------------- |
-| `settings-store` | localStorage | API URL、API Key、模型清單   |
-| `theme-store`    | localStorage | 深色 / 淺色主題              |
-| `arena-store`    | 記憶體       | 插槽配置、回應文字、裁判結果 |
-| `debate-store`   | 記憶體       | 辯論配置、訊息歷史、評判結果 |
+| Store             | 持久化       | 主要職責                                   |
+| ----------------- | ------------ | ------------------------------------------ |
+| `settings-store`  | localStorage | API URL、API Key、模型清單、話題命名模型   |
+| `theme-store`     | localStorage | 深色 / 淺色主題                            |
+| `history-store`   | localStorage | 競技場與辯論紀錄（各上限 50 筆）           |
+| `arena-store`     | 記憶體       | 插槽配置、回應文字、裁判結果               |
+| `debate-store`    | 記憶體       | 辯論配置、訊息歷史、評判結果               |
+
+#### 歷史紀錄儲存策略
+
+- **圖片附件**：僅儲存檔名等 metadata，base64 內容以空字串取代（節省 localStorage 空間）
+- **pruneToMax()**：按 `updatedAt` 降冪排序，保留最新 50 筆
+- **activeArenaId / activeDebateId**：追蹤當前載入的紀錄 ID，`saveArena` / `saveDebate` 根據此 ID 決定更新或新增
 
 ---
 
@@ -364,11 +408,11 @@ callbacks.onError()       ──→ 錯誤處理
 
 位於 `src/services/openrouter-client.ts`
 
-| 方法                                                            | 說明                  |
-| --------------------------------------------------------------- | --------------------- |
-| `streamChat(modelId, messages, callbacks, signal?, options?)` | SSE 串流對話          |
-| `chat(modelId, messages, signal?, options?)`                  | 一次性非串流對話      |
-| `testConnection()`                                            | 測試 API 連線是否正常 |
+| 方法                                                             | 說明                  |
+| ---------------------------------------------------------------- | --------------------- |
+| `streamChat(modelId, messages, callbacks, signal?, options?)`  | SSE 串流對話          |
+| `chat(modelId, messages, signal?, options?)`                   | 一次性非串流對話      |
+| `testConnection()`                                             | 測試 API 連線是否正常 |
 
 `options.reasoning` 可控制推理模式：
 
@@ -389,10 +433,10 @@ callbacks.onError()       ──→ 錯誤處理
 
 位於 `src/services/debate-orchestrator.ts`
 
-| 方法                    | 說明                            |
-| ----------------------- | ------------------------------- |
-| `startDebate(config)` | 啟動完整辯論流程（回合 + 評判） |
-| `stop()`              | 停止辯論                        |
+| 方法             | 說明                            |
+| ---------------- | ------------------------------- |
+| `startDebate()` | 啟動完整辯論流程（回合 + 評判） |
+| `stop()`        | 停止辯論                        |
 
 辯論內部會傳遞完整對話歷史給每一輪發言的模型，確保模型能根據前幾輪的辯論內容進行有效回應。
 
@@ -411,6 +455,12 @@ callbacks.onError()       ──→ 錯誤處理
 位於 `src/components/shared/ModelSlot.tsx`
 
 使用 **React Portal** 渲染下拉清單至 `document.body`，避免被父容器的 `overflow: hidden` 裁切。透過 `getBoundingClientRect()` 動態計算位置，並監聽 scroll / resize 事件即時更新。
+
+### `title-generator`
+
+位於 `src/services/title-generator.ts`
+
+呼叫 `OpenRouterClient.chat()`（非串流），傳入問題文字與圖片附件，要求模型以 15 字以內輸出標題。若 API 設定缺失或呼叫失敗，回傳截斷的輸入文字作為 fallback。
 
 ---
 
@@ -486,5 +536,10 @@ OpenRouter 支援數百個模型，你只需在設定頁面的「模型清單」
 - **CORS**：OpenRouter 支援從瀏覽器直接呼叫，無需後端代理
 - **API Key 安全性**：Key 儲存於 `localStorage`，僅適用於個人使用環境，請勿在公開服務上部署
 - **串流協定**：使用標準 SSE（Server-Sent Events），依賴瀏覽器原生 `fetch` + `ReadableStream`
+- **localStorage 容量**：圖片附件不儲存 base64 內容以節省空間；大量長文本對話可能接近瀏覽器限制（通常 5–10 MB）
 
 ---
+
+## 相關文件
+
+- [開發紀錄](Docs/DEVLOG.md) — 功能迭代歷程與技術決策記錄
