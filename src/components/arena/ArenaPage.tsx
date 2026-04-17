@@ -144,7 +144,7 @@ export function ArenaPage(): JSX.Element {
   const hasResponses = store.slots.some((s) => s.responseText || s.isStreaming)
 
   return (
-    <div className="flex flex-col p-5 gap-4">
+    <div className="flex flex-col p-4 md:p-5 gap-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">模型競技場</h2>
         <div className="flex items-center gap-1.5">
@@ -168,8 +168,8 @@ export function ArenaPage(): JSX.Element {
 
       {/* 模型設定列 */}
       <div className={`grid gap-3 ${
-        store.slotCount === 2 ? 'grid-cols-2' :
-        store.slotCount === 3 ? 'grid-cols-3' : 'grid-cols-4'
+        store.slotCount === 2 ? 'grid-cols-1 sm:grid-cols-2' :
+        store.slotCount === 3 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-4'
       }`}>
         {store.slots.map((slot, index) => (
           <ModelSlot
@@ -199,8 +199,8 @@ export function ArenaPage(): JSX.Element {
       {/* 回應區 — 固定最小高度，不會被裁判區壓縮 */}
       {hasResponses && (
         <div className={`grid gap-3 ${
-          store.slotCount === 2 ? 'grid-cols-2' :
-          store.slotCount === 3 ? 'grid-cols-3' : 'grid-cols-4'
+          store.slotCount === 2 ? 'grid-cols-1 sm:grid-cols-2' :
+          store.slotCount === 3 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-4'
         }`}>
           {store.slots.map((slot, index) => (
             <div

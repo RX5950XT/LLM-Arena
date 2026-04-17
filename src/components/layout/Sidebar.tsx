@@ -69,9 +69,10 @@ function formatRelativeTime(timestamp: number): string {
 
 interface HistoryListProps {
   type: 'arena' | 'debate'
+  onClose: () => void
 }
 
-function HistoryList({ type }: HistoryListProps): JSX.Element {
+function HistoryList({ type, onClose }: HistoryListProps): JSX.Element {
   const navigate = useNavigate()
   const historyStore = useHistoryStore()
   const arenaStore = useArenaStore()
@@ -91,6 +92,7 @@ function HistoryList({ type }: HistoryListProps): JSX.Element {
       historyStore.setActiveDebateId(entry.id)
       navigate('/debate')
     }
+    onClose()
   }
 
   const handleNewSession = (): void => {
@@ -103,6 +105,7 @@ function HistoryList({ type }: HistoryListProps): JSX.Element {
       historyStore.setActiveDebateId(null)
       navigate('/debate')
     }
+    onClose()
   }
 
   const handleDelete = (e: React.MouseEvent, id: string): void => {
@@ -116,7 +119,7 @@ function HistoryList({ type }: HistoryListProps): JSX.Element {
 
   return (
     <div className="mt-1 mb-1.5">
-      {/* 新對話按鈕 - 與導覽項目對齊 */}
+      {/* 新對話按鈕 */}
       <button
         type="button"
         onClick={handleNewSession}
@@ -191,7 +194,12 @@ function HistoryList({ type }: HistoryListProps): JSX.Element {
   )
 }
 
-export function Sidebar(): JSX.Element {
+interface SidebarProps {
+  isOpen: boolean
+  onClose: () => void
+}
+
+export function Sidebar({ isOpen, onClose }: SidebarProps): JSX.Element {
   const { theme, toggleTheme } = useThemeStore()
   const [expanded, setExpanded] = useState<'arena' | 'debate' | null>(null)
 
@@ -200,7 +208,15 @@ export function Sidebar(): JSX.Element {
   }
 
   return (
-    <aside className="w-52 shrink-0 bg-slate-100 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col">
+    <aside className={`
+      fixed md:relative inset-y-0 left-0 z-40
+      w-52 shrink-0
+      bg-slate-100 dark:bg-slate-900
+      border-r border-slate-200 dark:border-slate-800
+      flex flex-col
+      transition-transform duration-300 ease-in-out
+      ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+    `}>
       {/* Logo */}
       <div className="px-4 py-5 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-2">
@@ -242,7 +258,7 @@ export function Sidebar(): JSX.Element {
               </svg>
             </span>
           </NavLink>
-          {expanded === 'arena' && <HistoryList type="arena" />}
+          {expanded === 'arena' && <HistoryList type="arena" onClose={onClose} />}
         </div>
 
         {/* AI 辯論 */}
@@ -266,7 +282,7 @@ export function Sidebar(): JSX.Element {
               </svg>
             </span>
           </NavLink>
-          {expanded === 'debate' && <HistoryList type="debate" />}
+          {expanded === 'debate' && <HistoryList type="debate" onClose={onClose} />}
         </div>
 
         {/* 分隔線 */}
@@ -275,6 +291,7 @@ export function Sidebar(): JSX.Element {
         {/* 設定 */}
         <NavLink
           to="/settings"
+          onClick={onClose}
           className={({ isActive }) =>
             `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
               isActive

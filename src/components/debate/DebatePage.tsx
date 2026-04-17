@@ -78,11 +78,11 @@ export function DebatePage(): JSX.Element {
   const hasDialogue = store.messages.length > 0 || store.currentStreamText
 
   return (
-    <div className="flex flex-col p-5 gap-4">
+    <div className="flex flex-col p-4 md:p-5 gap-4">
       <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">AI 辯論</h2>
 
       {/* 設定區 */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-4 rounded-full bg-blue-500" />
@@ -116,7 +116,7 @@ export function DebatePage(): JSX.Element {
       </div>
 
       {/* 議題與回合設定 */}
-      <div className="flex items-end gap-3">
+      <div className="flex flex-col md:flex-row md:items-end gap-3">
         <div className="flex-1">
           <DropZone
             attachments={store.attachments}
@@ -175,7 +175,7 @@ export function DebatePage(): JSX.Element {
 
       {/* 辯論對話區 — 固定高度，不被裁判區壓縮 */}
       {hasDialogue && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {/* 正方對話 */}
           <div className="h-[500px] flex flex-col border border-blue-200 dark:border-blue-900/50 rounded-xl overflow-hidden">
             <div className="px-3 py-2 bg-blue-50 dark:bg-blue-950/30 border-b border-blue-200 dark:border-blue-900/50 flex items-center gap-2 shrink-0">
@@ -246,7 +246,7 @@ export function DebatePage(): JSX.Element {
           </svg>
           <span className="text-sm font-medium text-slate-700 dark:text-slate-300">裁判團（4 位）</span>
         </div>
-        <div className="grid grid-cols-2 gap-3 p-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3">
           {store.judges.map((judge, index) => (
             <div key={index} className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
               <div className="p-3">

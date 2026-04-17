@@ -104,12 +104,12 @@ export function SettingsPage(): JSX.Element {
   const totalDebate = historyStore.debateHistory.length
 
   return (
-    <div className="h-full p-5 overflow-y-auto">
+    <div className="h-full p-4 md:p-5 overflow-y-auto">
       <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-5">設定</h2>
 
-      <div className="flex gap-5">
+      <div className="flex flex-col md:flex-row gap-5">
         {/* 左側：API 設定 */}
-        <div className="w-80 shrink-0 space-y-5">
+        <div className="w-full md:w-80 shrink-0 space-y-5">
           <div className="space-y-4 p-5 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900/50">
             <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider font-mono">OpenRouter API</h3>
 
