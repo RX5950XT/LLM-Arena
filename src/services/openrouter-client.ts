@@ -24,7 +24,7 @@ export class OpenRouterClient {
     return body
   }
 
-  async streamChat(
+  private async doStreamChat(
     modelId: string,
     messages: ChatMessage[],
     callbacks: StreamCallbacks,
@@ -90,6 +90,29 @@ export class OpenRouterClient {
     }
 
     callbacks.onComplete(fullText)
+  }
+
+  async streamChat(
+    modelId: string,
+    messages: ChatMessage[],
+    callbacks: StreamCallbacks,
+    signal?: AbortSignal,
+    options?: ChatOptions,
+    maxRetries = 2
+  ): Promise<void> {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (signal?.aborted) throw new Error('已取消')
+      try {
+        await this.doStreamChat(modelId, messages, callbacks, signal, options)
+        return
+      } catch (err) {
+        if (signal?.aborted) throw err
+        // Only retry on network errors (TypeError), not HTTP errors or API errors
+        const isNetworkError = err instanceof TypeError
+        if (!isNetworkError || attempt === maxRetries) throw err
+        await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)))
+      }
+    }
   }
 
   async chat(

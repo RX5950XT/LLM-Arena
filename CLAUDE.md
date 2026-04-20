@@ -46,12 +46,18 @@ src/
 
 ## 架構重點
 
-- `OpenRouterClient`：Fetch + ReadableStream SSE 解析，支援 Extended Thinking
+- `OpenRouterClient`：Fetch + ReadableStream SSE 解析，支援 Extended Thinking；網路錯誤（TypeError）自動 retry 最多 2 次，每次間隔 1.5/3 秒
 - `StreamingManager`：`Promise.allSettled` 並行多模型串流，AbortController 管理生命週期
 - `DebateOrchestrator`：回合制辯論狀態機，每回合傳遞完整對話歷史
 - 歷史紀錄：localStorage 持久化，各 50 筆上限，圖片附件替換為 placeholder 節省空間
 - 主題：class-based dark mode（`document.documentElement.classList`）
 - Portal 渲染：ModelSlot 下拉清單使用 `createPortal` 避免 overflow 裁切
+- 中斷恢復：發送前將設定儲存於 localStorage（TTL 15 分鐘），重新整理後自動恢復並提示重新生成
+
+## UI 功能
+
+- **生成動畫**：`StreamingText` 在等待第一個 token 時顯示旋轉 spinner；生成中顯示 spinner + "生成中" 標籤；生成完成後 2.5 秒內顯示 "✓ 完成" 標籤
+- **折疊回應**：競技場每個模型回應卡片可個別折疊/展開；辯論每回合訊息可折疊/展開
 
 ## RWD 設計
 
@@ -64,3 +70,4 @@ src/
 - API Key 儲存於 localStorage，不上傳後端
 - 使用 HashRouter（`/#/路徑`），適合靜態部署（Vercel、GitHub Pages）
 - StreamingText 每 120ms 節流更新 Markdown 渲染以提升效能
+- 中斷恢復 key：`arena-recovery-state`、`debate-recovery-state`（localStorage）

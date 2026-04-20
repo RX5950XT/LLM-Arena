@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useArenaStore } from '@/stores/arena-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useHistoryStore } from '@/stores/history-store'
@@ -14,9 +14,79 @@ import { DropZone } from '@/components/shared/DropZone'
 import { StreamingText } from '@/components/shared/StreamingText'
 import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer'
 
+const RECOVERY_KEY = 'arena-recovery-state'
+const RECOVERY_TTL_MS = 15 * 60 * 1000
+
+interface RecoveryState {
+  userInput: string
+  slotCount: number
+  slots: Array<{ modelId: string; systemPrompt: string; reasoning: boolean }>
+  judgeModelId: string
+  judgeSystemPrompt: string
+  timestamp: number
+}
+
+function saveRecoveryState(state: RecoveryState): void {
+  try {
+    localStorage.setItem(RECOVERY_KEY, JSON.stringify(state))
+  } catch {
+    // localStorage unavailable
+  }
+}
+
+function clearRecoveryState(): void {
+  try {
+    localStorage.removeItem(RECOVERY_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+function loadRecoveryState(): RecoveryState | null {
+  try {
+    const raw = localStorage.getItem(RECOVERY_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as RecoveryState
+    if (Date.now() - parsed.timestamp > RECOVERY_TTL_MS) {
+      localStorage.removeItem(RECOVERY_KEY)
+      return null
+    }
+    return parsed
+  } catch {
+    return null
+  }
+}
+
 export function ArenaPage(): JSX.Element {
   const store = useArenaStore()
   const { apiUrl, apiKey } = useSettingsStore()
+  const [collapsedSlots, setCollapsedSlots] = useState<Set<number>>(new Set())
+  const [recoveryBanner, setRecoveryBanner] = useState(false)
+  const recoveryAppliedRef = useRef(false)
+
+  useEffect(() => {
+    if (recoveryAppliedRef.current) return
+    recoveryAppliedRef.current = true
+    const saved = loadRecoveryState()
+    if (!saved) return
+    const hasActive = store.slots.some((s) => s.responseText || s.isStreaming)
+    if (hasActive) return
+    store.setSlotCount(saved.slotCount)
+    saved.slots.forEach((s, i) => store.updateSlot(i, s))
+    store.setUserInput(saved.userInput)
+    store.setJudgeModelId(saved.judgeModelId)
+    store.setJudgeSystemPrompt(saved.judgeSystemPrompt)
+    setRecoveryBanner(true)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleCollapse = useCallback((index: number) => {
+    setCollapsedSlots((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }, [])
 
   const handleSend = useCallback(async () => {
     if (!store.userInput.trim() || store.isSending) return
@@ -31,6 +101,16 @@ export function ArenaPage(): JSX.Element {
       return
     }
 
+    setRecoveryBanner(false)
+    saveRecoveryState({
+      userInput: store.userInput,
+      slotCount: store.slotCount,
+      slots: store.slots.map((s) => ({ modelId: s.modelId, systemPrompt: s.systemPrompt, reasoning: s.reasoning ?? false })),
+      judgeModelId: store.judgeModelId,
+      judgeSystemPrompt: store.judgeSystemPrompt,
+      timestamp: Date.now()
+    })
+    setCollapsedSlots(new Set())
     store.resetResponses()
     store.setIsSending(true)
 
@@ -104,6 +184,7 @@ export function ArenaPage(): JSX.Element {
     }
 
     store.setIsSending(false)
+    clearRecoveryState()
 
     // 背景：生成標題並儲存歷史紀錄
     void (async () => {
@@ -185,6 +266,21 @@ export function ArenaPage(): JSX.Element {
         ))}
       </div>
 
+      {/* 中斷恢復提示 */}
+      {recoveryBanner && (
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl text-sm text-amber-700 dark:text-amber-300">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 shrink-0">
+            <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+          </svg>
+          <span className="flex-1">已恢復上次未完成的設定，點擊發送即可重新生成。</span>
+          <button type="button" onClick={() => setRecoveryBanner(false)} className="shrink-0 text-amber-500 hover:text-amber-700 dark:hover:text-amber-200 cursor-pointer">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* 輸入區 */}
       <DropZone
         attachments={store.attachments}
@@ -196,34 +292,55 @@ export function ArenaPage(): JSX.Element {
         isSending={store.isSending}
       />
 
-      {/* 回應區 — 固定最小高度，不會被裁判區壓縮 */}
+      {/* 回應區 */}
       {hasResponses && (
         <div className={`grid gap-3 ${
           store.slotCount === 2 ? 'grid-cols-1 sm:grid-cols-2' :
           store.slotCount === 3 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-4'
         }`}>
-          {store.slots.map((slot, index) => (
-            <div
-              key={slot.id}
-              className="flex flex-col border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden min-h-[200px] max-h-[500px]"
-            >
-              <div className="px-3 py-2 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
-                <span className="text-xs font-mono font-semibold text-slate-600 dark:text-slate-400">
-                  模型 {String.fromCharCode(65 + index)}
-                </span>
-                <span className="text-xs text-slate-400 dark:text-slate-600 truncate font-mono">
-                  {slot.modelId || '未設定'}
-                </span>
+          {store.slots.map((slot, index) => {
+            const isCollapsed = collapsedSlots.has(index)
+            return (
+              <div
+                key={slot.id}
+                className="flex flex-col border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden"
+              >
+                <div className="px-3 py-2 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2 shrink-0">
+                  <span className="text-xs font-mono font-semibold text-slate-600 dark:text-slate-400">
+                    模型 {String.fromCharCode(65 + index)}
+                  </span>
+                  <span className="text-xs text-slate-400 dark:text-slate-600 truncate font-mono flex-1">
+                    {slot.modelId || '未設定'}
+                  </span>
+                  {slot.isStreaming && (
+                    <svg className="animate-spin w-3 h-3 text-primary-500 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => toggleCollapse(index)}
+                    className="shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors cursor-pointer"
+                    title={isCollapsed ? '展開' : '折疊'}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 transition-transform ${isCollapsed ? '' : 'rotate-180'}`}>
+                      <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 011.06 0L10 11.94l3.72-3.72a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.22 9.28a.75.75 0 010-1.06z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+                {!isCollapsed && (
+                  <div className="overflow-y-auto p-3 min-h-[200px] max-h-[500px]">
+                    <StreamingText
+                      text={slot.responseText}
+                      isStreaming={slot.isStreaming}
+                      error={slot.error}
+                    />
+                  </div>
+                )}
               </div>
-              <div className="flex-1 overflow-y-auto p-3">
-                <StreamingText
-                  text={slot.responseText}
-                  isStreaming={slot.isStreaming}
-                  error={slot.error}
-                />
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -247,7 +364,13 @@ export function ArenaPage(): JSX.Element {
             <div className="mt-3 p-4 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 max-h-[500px] overflow-y-auto">
               <MarkdownRenderer content={store.judgeResult} />
               {store.isJudging && (
-                <span className="inline-block w-2 h-4 bg-primary-500 animate-pulse mt-1" />
+                <span className="inline-flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 mt-2">
+                  <svg className="animate-spin w-3 h-3 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  評審中
+                </span>
               )}
             </div>
           )}
