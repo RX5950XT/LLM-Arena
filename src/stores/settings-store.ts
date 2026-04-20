@@ -8,9 +8,12 @@ const DEFAULT_MODEL_LIST: string[] = [
   'google/gemini-3-flash-preview',
   'google/gemini-3.1-pro-preview',
   'moonshotai/kimi-k2.5',
-  'z-ai/glm-5',
-  'minimax/minimax-m2.5',
+  'anthropic/claude-sonnet-4.6',
+  'z-ai/glm-5.1',
+  'minimax/minimax-m2.7',
   'qwen/qwen3.5-397b-a17b',
+  'qwen/qwen3.6-plus',
+  'x-ai/grok-4.20',
   'deepseek/deepseek-v3.2'
 ]
 
