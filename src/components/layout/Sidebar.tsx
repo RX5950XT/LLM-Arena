@@ -4,7 +4,10 @@ import { useThemeStore } from '@/stores/theme-store'
 import { useHistoryStore } from '@/stores/history-store'
 import { useArenaStore } from '@/stores/arena-store'
 import { useDebateStore } from '@/stores/debate-store'
-import type { ArenaHistoryEntry, DebateHistoryEntry } from '@/types/history'
+import { getArenaRunSnapshot, stopArenaRun } from '@/services/arena-runner'
+import { getDebateRunSnapshot, stopDebateRun } from '@/services/debate-runner'
+import { stopProviderRun } from '@/services/provider-runner'
+import type { ArenaHistoryEntry, DebateHistoryEntry, ProviderHistoryEntry } from '@/types/history'
 
 function IconArena(): JSX.Element {
   return (
@@ -18,6 +21,15 @@ function IconDebate(): JSX.Element {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
       <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0 0 11.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
+    </svg>
+  )
+}
+
+function IconProviders(): JSX.Element {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 4.5v15m10.5-15v15" />
     </svg>
   )
 }
@@ -68,7 +80,7 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 interface HistoryListProps {
-  type: 'arena' | 'debate'
+  type: 'arena' | 'debate' | 'provider'
   onClose: () => void
 }
 
@@ -79,18 +91,29 @@ function HistoryList({ type, onClose }: HistoryListProps): JSX.Element {
   const debateStore = useDebateStore()
   const [hoveredId, setHoveredId] = useState<string | null>(null)
 
-  const history = type === 'arena' ? historyStore.arenaHistory : historyStore.debateHistory
-  const activeId = type === 'arena' ? historyStore.activeArenaId : historyStore.activeDebateId
+  const history = type === 'arena'
+    ? historyStore.arenaHistory
+    : type === 'debate' ? historyStore.debateHistory : historyStore.providerHistory
+  const activeId = type === 'arena'
+    ? historyStore.activeArenaId
+    : type === 'debate' ? historyStore.activeDebateId : historyStore.activeProviderId
 
-  const handleLoad = (entry: ArenaHistoryEntry | DebateHistoryEntry): void => {
+  const handleLoad = (entry: ArenaHistoryEntry | DebateHistoryEntry | ProviderHistoryEntry): void => {
     if (type === 'arena') {
-      arenaStore.restoreFromHistory(entry as ArenaHistoryEntry)
       historyStore.setActiveArenaId(entry.id)
+      const snapshot = getArenaRunSnapshot(entry.id)
+      if (snapshot) useArenaStore.setState(snapshot)
+      else arenaStore.restoreFromHistory(entry as ArenaHistoryEntry)
       navigate('/')
-    } else {
-      debateStore.restoreFromHistory(entry as DebateHistoryEntry)
+    } else if (type === 'debate') {
       historyStore.setActiveDebateId(entry.id)
+      const snapshot = getDebateRunSnapshot(entry.id)
+      if (snapshot) useDebateStore.setState(snapshot)
+      else debateStore.restoreFromHistory(entry as DebateHistoryEntry)
       navigate('/debate')
+    } else {
+      historyStore.setActiveProviderId(entry.id)
+      navigate('/providers')
     }
     onClose()
   }
@@ -100,10 +123,13 @@ function HistoryList({ type, onClose }: HistoryListProps): JSX.Element {
       arenaStore.resetAll()
       historyStore.setActiveArenaId(null)
       navigate('/')
-    } else {
+    } else if (type === 'debate') {
       debateStore.reset()
       historyStore.setActiveDebateId(null)
       navigate('/debate')
+    } else {
+      historyStore.setActiveProviderId(null)
+      navigate('/providers')
     }
     onClose()
   }
@@ -111,9 +137,14 @@ function HistoryList({ type, onClose }: HistoryListProps): JSX.Element {
   const handleDelete = (e: React.MouseEvent, id: string): void => {
     e.stopPropagation()
     if (type === 'arena') {
+      stopArenaRun(id)
       historyStore.deleteArena(id)
-    } else {
+    } else if (type === 'debate') {
+      stopDebateRun(id)
       historyStore.deleteDebate(id)
+    } else {
+      stopProviderRun(id)
+      historyStore.deleteProvider(id)
     }
   }
 
@@ -201,9 +232,9 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen, onClose }: SidebarProps): JSX.Element {
   const { theme, toggleTheme } = useThemeStore()
-  const [expanded, setExpanded] = useState<'arena' | 'debate' | null>(null)
+  const [expanded, setExpanded] = useState<'arena' | 'debate' | 'provider' | null>(null)
 
-  const toggleExpanded = (type: 'arena' | 'debate'): void => {
+  const toggleExpanded = (type: 'arena' | 'debate' | 'provider'): void => {
     setExpanded((prev) => (prev === type ? null : type))
   }
 
@@ -284,6 +315,28 @@ export function Sidebar({ isOpen, onClose }: SidebarProps): JSX.Element {
           </NavLink>
           {expanded === 'debate' && <HistoryList type="debate" onClose={onClose} />}
         </div>
+
+        {/* 供應商比較 */}
+        <NavLink
+          to="/providers"
+          onClick={() => toggleExpanded('provider')}
+          className={({ isActive }) =>
+            `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+              isActive
+                ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
+            }`
+          }
+        >
+          <span className="shrink-0"><IconProviders /></span>
+          <span className="flex-1">供應商比較</span>
+          <span className="shrink-0 p-0.5 text-slate-400 dark:text-slate-600">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className={`w-3 h-3 transition-transform duration-200 ${expanded === 'provider' ? 'rotate-180' : ''}`}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+            </svg>
+          </span>
+          </NavLink>
+        {expanded === 'provider' && <HistoryList type="provider" onClose={onClose} />}
 
         {/* 分隔線 */}
         <div className="!my-2 border-t border-slate-200 dark:border-slate-800" />

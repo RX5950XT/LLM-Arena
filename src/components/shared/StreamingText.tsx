@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { MarkdownRenderer } from './MarkdownRenderer'
+import { ReasoningDisclosure } from './ReasoningDisclosure'
 
 const THROTTLE_MS = 120
 const DONE_FLASH_MS = 2500
 
 interface StreamingTextProps {
   text: string
+  reasoningText?: string
   isStreaming: boolean
   error?: string | null
 }
@@ -53,7 +55,7 @@ function Spinner(): JSX.Element {
   )
 }
 
-export function StreamingText({ text, isStreaming, error }: StreamingTextProps): JSX.Element {
+export function StreamingText({ text, reasoningText = '', isStreaming, error }: StreamingTextProps): JSX.Element {
   const throttled = useThrottledContent(text, isStreaming)
   const [showDone, setShowDone] = useState(false)
   const prevStreamingRef = useRef(isStreaming)
@@ -70,13 +72,16 @@ export function StreamingText({ text, isStreaming, error }: StreamingTextProps):
 
   if (error) {
     return (
-      <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
-        {error}
+      <div>
+        <ReasoningDisclosure content={reasoningText} />
+        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
+          {error}
+        </div>
       </div>
     )
   }
 
-  if (!text && isStreaming) {
+  if (!text && !reasoningText && isStreaming) {
     return (
       <div className="flex items-center gap-2 text-sm text-slate-400 dark:text-slate-500 py-2">
         <Spinner />
@@ -85,7 +90,7 @@ export function StreamingText({ text, isStreaming, error }: StreamingTextProps):
     )
   }
 
-  if (!text && !isStreaming) {
+  if (!text && !reasoningText && !isStreaming) {
     return (
       <div className="text-sm text-slate-400 dark:text-slate-500 italic">
         等待回應...
@@ -95,7 +100,8 @@ export function StreamingText({ text, isStreaming, error }: StreamingTextProps):
 
   return (
     <div>
-      <MarkdownRenderer content={throttled} />
+      <ReasoningDisclosure content={reasoningText} isStreaming={isStreaming} />
+      {text && <MarkdownRenderer content={throttled} />}
       <div className="h-5 mt-1">
         {isStreaming && (
           <span className="inline-flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">

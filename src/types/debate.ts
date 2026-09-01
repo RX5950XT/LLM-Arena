@@ -7,6 +7,7 @@ export interface DebateMessage {
   side: DebateSide
   round: number
   content: string
+  reasoningText?: string
 }
 
 export interface JudgeResult {
@@ -14,6 +15,7 @@ export interface JudgeResult {
   modelId: string
   systemPrompt: string
   analysis: string
+  reasoningText: string
   isStreaming: boolean
   error: string | null
 }
@@ -21,6 +23,7 @@ export interface JudgeResult {
 export interface DebateState {
   topic: string
   totalRounds: number
+  startingSide: DebateSide
   forModel: ModelConfig
   againstModel: ModelConfig
   attachments: Attachment[]
@@ -29,5 +32,6 @@ export interface DebateState {
   currentSpeaker: DebateSide | null
   messages: DebateMessage[]
   currentStreamText: string
+  currentStreamReasoningText: string
   judges: JudgeResult[]
 }

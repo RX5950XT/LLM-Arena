@@ -1,4 +1,53 @@
-import type { ChatMessage, StreamCallbacks, ChatOptions } from '@/types/models'
+import type { ChatMessage, StreamCallbacks, ChatOptions, ProviderEndpoint } from '@/types/models'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function toNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const number = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function parseEndpoint(value: unknown): ProviderEndpoint | null {
+  if (!isRecord(value)) return null
+
+  const slug = typeof value.tag === 'string' ? value.tag.trim() : ''
+  if (!slug) return null
+
+  const name = typeof value.provider_name === 'string'
+    ? value.provider_name
+    : typeof value.name === 'string' ? value.name : slug
+  const pricing = isRecord(value.pricing) ? value.pricing : {}
+
+  return {
+    slug,
+    name,
+    contextLength: toNumber(value.context_length),
+    maxCompletionTokens: toNumber(value.max_completion_tokens),
+    promptPrice: toNumber(pricing.prompt),
+    completionPrice: toNumber(pricing.completion)
+  }
+}
+
+function getReasoningDelta(delta: unknown): string {
+  if (!isRecord(delta)) return ''
+
+  for (const key of ['reasoning', 'reasoning_content']) {
+    if (typeof delta[key] === 'string') return delta[key]
+  }
+
+  if (!Array.isArray(delta.reasoning_details)) return ''
+  return delta.reasoning_details
+    .filter(isRecord)
+    .map((detail) => {
+      if (typeof detail.text === 'string') return detail.text
+      if (typeof detail.summary === 'string') return detail.summary
+      return ''
+    })
+    .join('')
+}
 
 export class OpenRouterClient {
   private apiUrl: string
@@ -20,6 +69,9 @@ export class OpenRouterClient {
       body.reasoning = { effort: 'high' }
     } else if (options?.reasoning === false) {
       body.reasoning = { enabled: false }
+    }
+    if (options?.provider) {
+      body.provider = { only: [options.provider] }
     }
     return body
   }
@@ -75,7 +127,13 @@ export class OpenRouterClient {
 
           try {
             const parsed = JSON.parse(data)
-            const token = parsed.choices?.[0]?.delta?.content
+            const delta = parsed.choices?.[0]?.delta
+            const reasoning = getReasoningDelta(delta)
+            if (reasoning) {
+              callbacks.onReasoningToken?.(reasoning)
+            }
+
+            const token = delta?.content
             if (token) {
               fullText += token
               callbacks.onToken(token)
@@ -140,6 +198,44 @@ export class OpenRouterClient {
 
     const result = await response.json()
     return result.choices?.[0]?.message?.content || ''
+  }
+
+  async getModelEndpoints(modelId: string, signal?: AbortSignal): Promise<ProviderEndpoint[]> {
+    const trimmed = modelId.trim()
+    const separator = trimmed.indexOf('/')
+    if (separator <= 0 || separator === trimmed.length - 1) {
+      throw new Error('模型 ID 必須是 author/model 格式')
+    }
+
+    const author = trimmed.slice(0, separator)
+    const slug = trimmed.slice(separator + 1)
+    const response = await fetch(
+      `${this.apiUrl}/models/${encodeURIComponent(author)}/${encodeURIComponent(slug)}/endpoints`,
+      {
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'HTTP-Referer': 'https://llm-arena.local',
+          'X-Title': 'LLM Arena'
+        },
+        signal
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => response.statusText)
+      throw new Error(`供應商清單錯誤 (${response.status}): ${errorText}`)
+    }
+
+    const result: unknown = await response.json()
+    const data = isRecord(result) && isRecord(result.data) ? result.data : null
+    if (!data || !Array.isArray(data.endpoints)) return []
+
+    const unique = new Map<string, ProviderEndpoint>()
+    for (const endpoint of data.endpoints) {
+      const parsed = parseEndpoint(endpoint)
+      if (parsed) unique.set(parsed.slug, parsed)
+    }
+    return [...unique.values()]
   }
 
   async testConnection(): Promise<{ success: boolean; error?: string }> {

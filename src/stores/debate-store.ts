@@ -12,6 +12,7 @@ import { DEFAULT_DEBATE_ROUNDS } from '@/constants/config'
 interface DebateActions {
   setTopic: (topic: string) => void
   setTotalRounds: (rounds: number) => void
+  setStartingSide: (side: DebateSide) => void
   setForModel: (config: Partial<ModelConfig>) => void
   setAgainstModel: (config: Partial<ModelConfig>) => void
   addAttachment: (attachment: Attachment) => void
@@ -21,10 +22,13 @@ interface DebateActions {
   setCurrentSpeaker: (speaker: DebateSide | null) => void
   appendMessage: (message: DebateMessage) => void
   setCurrentStreamText: (text: string) => void
+  setCurrentStreamReasoningText: (text: string) => void
   appendStreamToken: (token: string) => void
+  appendCurrentStreamReasoningToken: (token: string) => void
   updateJudge: (index: number, updates: Partial<JudgeResult>) => void
   setJudgeResult: (index: number, analysis: string) => void
   appendJudgeToken: (index: number, token: string) => void
+  appendJudgeReasoningToken: (index: number, token: string) => void
   reset: () => void
   resetDebate: () => void
   restoreFromHistory: (entry: DebateHistoryEntry) => void
@@ -33,6 +37,7 @@ interface DebateActions {
 interface DebateStore {
   topic: string
   totalRounds: number
+  startingSide: DebateSide
   forModel: ModelConfig
   againstModel: ModelConfig
   attachments: Attachment[]
@@ -41,6 +46,7 @@ interface DebateStore {
   currentSpeaker: DebateSide | null
   messages: DebateMessage[]
   currentStreamText: string
+  currentStreamReasoningText: string
   judges: JudgeResult[]
 }
 
@@ -49,6 +55,7 @@ const defaultJudges: JudgeResult[] = DEBATE_JUDGE_DEFAULTS.map((j) => ({
   modelId: '',
   systemPrompt: j.systemPrompt,
   analysis: '',
+  reasoningText: '',
   isStreaming: false,
   error: null
 }))
@@ -56,6 +63,7 @@ const defaultJudges: JudgeResult[] = DEBATE_JUDGE_DEFAULTS.map((j) => ({
 export const useDebateStore = create<DebateStore & DebateActions>((set, get) => ({
   topic: '',
   totalRounds: DEFAULT_DEBATE_ROUNDS,
+  startingSide: 'for',
   forModel: { modelId: '', systemPrompt: DEFAULT_FOR_PROMPT },
   againstModel: { modelId: '', systemPrompt: DEFAULT_AGAINST_PROMPT },
   attachments: [],
@@ -64,10 +72,12 @@ export const useDebateStore = create<DebateStore & DebateActions>((set, get) => 
   currentSpeaker: null,
   messages: [],
   currentStreamText: '',
+  currentStreamReasoningText: '',
   judges: defaultJudges.map((j) => ({ ...j })),
 
   setTopic: (topic) => set({ topic }),
   setTotalRounds: (totalRounds) => set({ totalRounds }),
+  setStartingSide: (startingSide) => set({ startingSide }),
 
   setForModel: (config) =>
     set((state) => ({ forModel: { ...state.forModel, ...config } })),
@@ -90,14 +100,21 @@ export const useDebateStore = create<DebateStore & DebateActions>((set, get) => 
   appendMessage: (message) =>
     set((state) => ({
       messages: [...state.messages, message],
-      currentStreamText: ''
+      currentStreamText: '',
+      currentStreamReasoningText: ''
     })),
 
   setCurrentStreamText: (currentStreamText) => set({ currentStreamText }),
+  setCurrentStreamReasoningText: (currentStreamReasoningText) => set({ currentStreamReasoningText }),
 
   appendStreamToken: (token) =>
     set((state) => ({
       currentStreamText: state.currentStreamText + token
+    })),
+
+  appendCurrentStreamReasoningToken: (token) =>
+    set((state) => ({
+      currentStreamReasoningText: state.currentStreamReasoningText + token
     })),
 
   updateJudge: (index, updates) =>
@@ -119,10 +136,18 @@ export const useDebateStore = create<DebateStore & DebateActions>((set, get) => 
       )
     })),
 
+  appendJudgeReasoningToken: (index, token) =>
+    set((state) => ({
+      judges: state.judges.map((j, i) =>
+        i === index ? { ...j, reasoningText: j.reasoningText + token } : j
+      )
+    })),
+
   reset: () =>
     set({
       topic: '',
       totalRounds: DEFAULT_DEBATE_ROUNDS,
+      startingSide: 'for',
       forModel: { modelId: '', systemPrompt: DEFAULT_FOR_PROMPT },
       againstModel: { modelId: '', systemPrompt: DEFAULT_AGAINST_PROMPT },
       attachments: [],
@@ -131,6 +156,7 @@ export const useDebateStore = create<DebateStore & DebateActions>((set, get) => 
       currentSpeaker: null,
       messages: [],
       currentStreamText: '',
+      currentStreamReasoningText: '',
       judges: defaultJudges.map((j) => ({ ...j }))
     }),
 
@@ -141,9 +167,11 @@ export const useDebateStore = create<DebateStore & DebateActions>((set, get) => 
       currentSpeaker: null,
       messages: [],
       currentStreamText: '',
+      currentStreamReasoningText: '',
       judges: get().judges.map((j) => ({
         ...j,
         analysis: '',
+        reasoningText: '',
         isStreaming: false,
         error: null
       }))
@@ -157,20 +185,22 @@ export const useDebateStore = create<DebateStore & DebateActions>((set, get) => 
     const restoredJudges: JudgeResult[] = currentJudges.map((j, i) => {
       const saved = entry.judges[i]
       if (!saved) return j
-      return { ...j, modelId: saved.modelId, systemPrompt: saved.systemPrompt, analysis: saved.analysis, isStreaming: false, error: null }
+      return { ...j, modelId: saved.modelId, systemPrompt: saved.systemPrompt, analysis: saved.analysis, reasoningText: saved.reasoningText ?? '', isStreaming: false, error: saved.error ?? null }
     })
     set({
       topic: entry.topic,
       totalRounds: entry.totalRounds,
+      startingSide: entry.startingSide === 'against' ? 'against' : 'for',
       forModel: entry.forModel as ModelConfig,
       againstModel: entry.againstModel as ModelConfig,
       attachments,
       messages: entry.messages as DebateMessage[],
       judges: restoredJudges,
       status: 'idle',
-      currentRound: 0,
-      currentSpeaker: null,
-      currentStreamText: ''
+      currentRound: entry.currentRound ?? 0,
+      currentSpeaker: entry.currentSpeaker ?? null,
+      currentStreamText: entry.currentStreamText ?? '',
+      currentStreamReasoningText: entry.currentStreamReasoningText ?? ''
     })
   }
 }))

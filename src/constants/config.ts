@@ -9,8 +9,8 @@ export const SUPPORTED_TEXT_TYPES = [
 ]
 export const MAX_FILE_SIZE = 20 * 1024 * 1024 // 20MB
 
-export const MIN_ARENA_SLOTS = 2
-export const MAX_ARENA_SLOTS = 4
+export const MIN_ARENA_SLOTS = 1
+export const MAX_ARENA_SLOTS = 15
 export const MIN_DEBATE_ROUNDS = 1
 export const MAX_DEBATE_ROUNDS = 10
 export const DEFAULT_DEBATE_ROUNDS = 3

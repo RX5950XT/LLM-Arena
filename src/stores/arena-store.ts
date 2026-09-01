@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ArenaSlot } from '@/types/arena'
+import type { ArenaAttempt, ArenaSlot } from '@/types/arena'
 import type { Attachment } from '@/types/models'
 import type { ArenaHistoryEntry } from '@/types/history'
 import { ARENA_JUDGE_DEFAULT_PROMPT } from '@/constants/default-prompts'
@@ -10,22 +10,37 @@ function createSlot(index: number): ArenaSlot {
     modelId: '',
     systemPrompt: '',
     reasoning: false,
-    responseText: '',
-    isStreaming: false,
-    error: null
+    attempts: [createAttempt()]
   }
+}
+
+function createAttempt(): ArenaAttempt {
+  return { responseText: '', reasoningText: '', isStreaming: false, error: null }
+}
+
+function createAttempts(count: number): ArenaAttempt[] {
+  return Array.from({ length: count }, createAttempt)
+}
+
+function clampRepeatCount(count: number): number {
+  return Number.isFinite(count) ? Math.min(5, Math.max(1, Math.round(count))) : 1
 }
 
 interface ArenaActions {
   setSlotCount: (count: number) => void
+  setRepeatCount: (count: number) => void
   updateSlot: (index: number, updates: Partial<ArenaSlot>) => void
-  appendToken: (index: number, token: string) => void
+  setAllSystemPrompts: (prompt: string) => void
+  updateAttempt: (slotIndex: number, attemptIndex: number, updates: Partial<ArenaAttempt>) => void
+  appendAttemptToken: (slotIndex: number, attemptIndex: number, token: string) => void
+  appendAttemptReasoningToken: (slotIndex: number, attemptIndex: number, token: string) => void
   setUserInput: (input: string) => void
   addAttachment: (attachment: Attachment) => void
   removeAttachment: (id: string) => void
   setJudgeModelId: (modelId: string) => void
   setJudgeSystemPrompt: (prompt: string) => void
   setJudgeResult: (result: string | null) => void
+  appendJudgeReasoningToken: (token: string) => void
   setIsJudging: (isJudging: boolean) => void
   setIsSending: (isSending: boolean) => void
   resetResponses: () => void
@@ -36,11 +51,13 @@ interface ArenaActions {
 interface ArenaStore {
   slots: ArenaSlot[]
   slotCount: number
+  repeatCount: number
   userInput: string
   attachments: Attachment[]
   judgeModelId: string
   judgeSystemPrompt: string
   judgeResult: string | null
+  judgeReasoningText: string
   isJudging: boolean
   isSending: boolean
 }
@@ -48,11 +65,13 @@ interface ArenaStore {
 export const useArenaStore = create<ArenaStore & ArenaActions>((set, get) => ({
   slots: [createSlot(0), createSlot(1)],
   slotCount: 2,
+  repeatCount: 1,
   userInput: '',
   attachments: [],
   judgeModelId: '',
   judgeSystemPrompt: ARENA_JUDGE_DEFAULT_PROMPT,
   judgeResult: null,
+  judgeReasoningText: '',
   isJudging: false,
   isSending: false,
 
@@ -64,6 +83,8 @@ export const useArenaStore = create<ArenaStore & ArenaActions>((set, get) => ({
     set({ slotCount: count, slots: newSlots })
   },
 
+  setRepeatCount: (count) => set({ repeatCount: clampRepeatCount(count) }),
+
   updateSlot: (index, updates) => {
     set((state) => ({
       slots: state.slots.map((slot, i) =>
@@ -72,10 +93,53 @@ export const useArenaStore = create<ArenaStore & ArenaActions>((set, get) => ({
     }))
   },
 
-  appendToken: (index, token) => {
+  setAllSystemPrompts: (prompt) => {
+    set((state) => ({
+      slots: state.slots.map((slot) => ({ ...slot, systemPrompt: prompt }))
+    }))
+  },
+
+  updateAttempt: (slotIndex, attemptIndex, updates) => {
     set((state) => ({
       slots: state.slots.map((slot, i) =>
-        i === index ? { ...slot, responseText: slot.responseText + token } : slot
+        i === slotIndex
+          ? {
+              ...slot,
+              attempts: slot.attempts.map((attempt, j) =>
+                j === attemptIndex ? { ...attempt, ...updates } : attempt
+              )
+            }
+          : slot
+      )
+    }))
+  },
+
+  appendAttemptToken: (slotIndex, attemptIndex, token) => {
+    set((state) => ({
+      slots: state.slots.map((slot, i) =>
+        i === slotIndex
+          ? {
+              ...slot,
+              attempts: slot.attempts.map((attempt, j) =>
+                j === attemptIndex ? { ...attempt, responseText: attempt.responseText + token } : attempt
+              )
+            }
+          : slot
+      )
+    }))
+  },
+
+  appendAttemptReasoningToken: (slotIndex, attemptIndex, token) => {
+    set((state) => ({
+      slots: state.slots.map((slot, i) =>
+        i === slotIndex
+          ? {
+              ...slot,
+              attempts: slot.attempts.map((attempt, j) =>
+                j === attemptIndex ? { ...attempt, reasoningText: attempt.reasoningText + token } : attempt
+              )
+            }
+          : slot
       )
     }))
   },
@@ -93,6 +157,8 @@ export const useArenaStore = create<ArenaStore & ArenaActions>((set, get) => ({
   setJudgeModelId: (modelId) => set({ judgeModelId: modelId }),
   setJudgeSystemPrompt: (prompt) => set({ judgeSystemPrompt: prompt }),
   setJudgeResult: (result) => set({ judgeResult: result }),
+  appendJudgeReasoningToken: (token) =>
+    set((state) => ({ judgeReasoningText: state.judgeReasoningText + token })),
   setIsJudging: (isJudging) => set({ isJudging }),
   setIsSending: (isSending) => set({ isSending }),
 
@@ -100,11 +166,10 @@ export const useArenaStore = create<ArenaStore & ArenaActions>((set, get) => ({
     set((state) => ({
       slots: state.slots.map((slot) => ({
         ...slot,
-        responseText: '',
-        isStreaming: false,
-        error: null
+        attempts: createAttempts(state.repeatCount)
       })),
       judgeResult: null,
+      judgeReasoningText: '',
       isJudging: false,
       isSending: false
     }))
@@ -113,11 +178,13 @@ export const useArenaStore = create<ArenaStore & ArenaActions>((set, get) => ({
   resetAll: () => {
     set((state) => ({
       slots: Array.from({ length: state.slotCount }, (_, i) => createSlot(i)),
+      repeatCount: 1,
       userInput: '',
       attachments: [],
       judgeModelId: '',
       judgeSystemPrompt: ARENA_JUDGE_DEFAULT_PROMPT,
       judgeResult: null,
+      judgeReasoningText: '',
       isJudging: false,
       isSending: false
     }))
@@ -129,21 +196,30 @@ export const useArenaStore = create<ArenaStore & ArenaActions>((set, get) => ({
       modelId: s.modelId,
       systemPrompt: s.systemPrompt,
       reasoning: s.reasoning,
-      responseText: s.responseText,
-      isStreaming: false,
-      error: s.error
+      attempts: (s.attempts?.length ? s.attempts : [{
+        responseText: s.responseText,
+        reasoningText: s.reasoningText,
+        error: s.error
+      }]).map((attempt) => ({
+        responseText: attempt.responseText,
+        reasoningText: attempt.reasoningText ?? '',
+        isStreaming: false,
+        error: attempt.error
+      }))
     }))
     const attachments: Attachment[] = entry.attachments
       .filter((a) => !a.isImagePlaceholder)
       .map(({ isImagePlaceholder: _, ...rest }) => rest)
     set({
       slotCount: entry.slotCount,
+      repeatCount: clampRepeatCount(entry.repeatCount ?? restoredSlots[0]?.attempts.length ?? 1),
       slots: restoredSlots,
       userInput: entry.userInput,
       attachments,
       judgeModelId: entry.judgeModelId,
       judgeSystemPrompt: entry.judgeSystemPrompt,
       judgeResult: entry.judgeResult,
+      judgeReasoningText: entry.judgeReasoningText ?? '',
       isJudging: false,
       isSending: false
     })

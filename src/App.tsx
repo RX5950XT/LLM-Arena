@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { HashRouter, Routes, Route } from 'react-router-dom'
 import { MainLayout } from '@/components/layout/MainLayout'
 import { ArenaPage } from '@/components/arena/ArenaPage'
+import { ProviderComparisonPage } from '@/components/providers/ProviderComparisonPage'
 import { DebatePage } from '@/components/debate/DebatePage'
 import { SettingsPage } from '@/components/settings/SettingsPage'
 import { initTheme } from '@/stores/theme-store'
@@ -21,6 +22,7 @@ export function App(): JSX.Element {
         <Route element={<MainLayout />}>
           <Route path="/" element={<ArenaPage />} />
           <Route path="/debate" element={<DebatePage />} />
+          <Route path="/providers" element={<ProviderComparisonPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Routes>

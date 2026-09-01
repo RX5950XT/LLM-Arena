@@ -35,4 +35,16 @@
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-slate-400 dark:bg-slate-500;
   }
+
+  .reasoning-summary {
+    list-style: none;
+  }
+
+  .reasoning-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .reasoning-details[open] .reasoning-summary svg {
+    transform: rotate(90deg);
+  }
 }

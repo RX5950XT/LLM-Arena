@@ -25,7 +25,7 @@ export class StreamingManager {
       return this.client
         .streamChat(task.modelId, task.messages, task.callbacks, controller.signal, task.options)
         .catch((err) => {
-          if (err instanceof Error && err.name === 'AbortError') return
+          if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) return
           task.callbacks.onError(err instanceof Error ? err : new Error(String(err)))
         })
         .finally(() => {

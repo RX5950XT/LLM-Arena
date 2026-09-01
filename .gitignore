@@ -1,6 +1,10 @@
 node_modules/
 out/
 dist/
+*.tsbuildinfo
+output/
+tmp/
+.playwright-cli/
 .env
 *.local
 

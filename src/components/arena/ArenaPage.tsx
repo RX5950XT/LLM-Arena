@@ -2,24 +2,24 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useArenaStore } from '@/stores/arena-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useHistoryStore } from '@/stores/history-store'
-import { OpenRouterClient } from '@/services/openrouter-client'
-import { StreamingManager } from '@/services/streaming-manager'
-import { buildContentParts } from '@/services/file-handler'
-import { generateTitle } from '@/services/title-generator'
-import type { ChatMessage } from '@/types/models'
-import type { StreamTask } from '@/services/streaming-manager'
+import { MAX_ARENA_SLOTS, MIN_ARENA_SLOTS } from '@/constants/config'
+import { getArenaRunSnapshot, startArenaRun, stopArenaRun } from '@/services/arena-runner'
+import type { Attachment } from '@/types/models'
 import type { StoredAttachment } from '@/types/history'
 import { ModelSlot } from '@/components/shared/ModelSlot'
 import { DropZone } from '@/components/shared/DropZone'
 import { StreamingText } from '@/components/shared/StreamingText'
 import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer'
+import { ReasoningDisclosure } from '@/components/shared/ReasoningDisclosure'
 
 const RECOVERY_KEY = 'arena-recovery-state'
 const RECOVERY_TTL_MS = 15 * 60 * 1000
 
 interface RecoveryState {
+  historyId?: string
   userInput: string
   slotCount: number
+  repeatCount?: number
   slots: Array<{ modelId: string; systemPrompt: string; reasoning: boolean }>
   judgeModelId: string
   judgeSystemPrompt: string
@@ -31,14 +31,6 @@ function saveRecoveryState(state: RecoveryState): void {
     localStorage.setItem(RECOVERY_KEY, JSON.stringify(state))
   } catch {
     // localStorage unavailable
-  }
-}
-
-function clearRecoveryState(): void {
-  try {
-    localStorage.removeItem(RECOVERY_KEY)
-  } catch {
-    // ignore
   }
 }
 
@@ -57,9 +49,22 @@ function loadRecoveryState(): RecoveryState | null {
   }
 }
 
+function getHistoryTitle(text: string): string {
+  return text.trim().slice(0, 40) || '未命名對話'
+}
+
+function toStoredAttachments(attachments: Attachment[]): StoredAttachment[] {
+  return attachments.map((attachment) => ({
+    ...attachment,
+    content: attachment.type === 'image' ? '' : attachment.content,
+    isImagePlaceholder: attachment.type === 'image'
+  }))
+}
+
 export function ArenaPage(): JSX.Element {
   const store = useArenaStore()
   const { apiUrl, apiKey } = useSettingsStore()
+  const activeArenaId = useHistoryStore((state) => state.activeArenaId)
   const [collapsedSlots, setCollapsedSlots] = useState<Set<number>>(new Set())
   const [recoveryBanner, setRecoveryBanner] = useState(false)
   const recoveryAppliedRef = useRef(false)
@@ -69,15 +74,21 @@ export function ArenaPage(): JSX.Element {
     recoveryAppliedRef.current = true
     const saved = loadRecoveryState()
     if (!saved) return
-    const hasActive = store.slots.some((s) => s.responseText || s.isStreaming)
+    const hasActive = store.slots.some((s) => s.attempts.some((attempt) => attempt.responseText || attempt.isStreaming))
     if (hasActive) return
     store.setSlotCount(saved.slotCount)
+    store.setRepeatCount(saved.repeatCount ?? 1)
     saved.slots.forEach((s, i) => store.updateSlot(i, s))
     store.setUserInput(saved.userInput)
     store.setJudgeModelId(saved.judgeModelId)
     store.setJudgeSystemPrompt(saved.judgeSystemPrompt)
     setRecoveryBanner(true)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const snapshot = getArenaRunSnapshot(activeArenaId)
+    if (snapshot) useArenaStore.setState(snapshot)
+  }, [activeArenaId])
 
   const toggleCollapse = useCallback((index: number) => {
     setCollapsedSlots((prev) => {
@@ -88,162 +99,125 @@ export function ArenaPage(): JSX.Element {
     })
   }, [])
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(() => {
     if (!store.userInput.trim() || store.isSending) return
     if (!apiKey) {
       alert('請先在設定頁面輸入 API Key')
       return
     }
 
-    const validSlots = store.slots.filter((s) => s.modelId.trim())
-    if (validSlots.length < 2) {
-      alert('請至少設定 2 個模型 ID')
+    const validSlots = store.slots
+      .map((slot, index) => ({ slot, index }))
+      .filter(({ slot }) => slot.modelId.trim())
+    if (validSlots.length < 1) {
+      alert('請至少設定 1 個模型 ID')
       return
     }
 
     setRecoveryBanner(false)
-    saveRecoveryState({
-      userInput: store.userInput,
-      slotCount: store.slotCount,
-      slots: store.slots.map((s) => ({ modelId: s.modelId, systemPrompt: s.systemPrompt, reasoning: s.reasoning ?? false })),
-      judgeModelId: store.judgeModelId,
-      judgeSystemPrompt: store.judgeSystemPrompt,
-      timestamp: Date.now()
-    })
     setCollapsedSlots(new Set())
     store.resetResponses()
     store.setIsSending(true)
 
-    const client = new OpenRouterClient(apiUrl, apiKey)
-    const manager = new StreamingManager(client)
-
-    const userContent = buildContentParts(store.userInput, store.attachments)
-
-    const tasks: StreamTask[] = validSlots.map((slot, index) => {
-      const messages: ChatMessage[] = []
-      if (slot.systemPrompt) {
-        messages.push({ role: 'system', content: slot.systemPrompt })
-      }
-      messages.push({ role: 'user', content: userContent })
-
-      store.updateSlot(index, { isStreaming: true })
-
-      return {
+    const initialState = useArenaStore.getState()
+    const historyId = useHistoryStore.getState().saveArena({
+      title: getHistoryTitle(initialState.userInput),
+      slotCount: initialState.slotCount,
+      repeatCount: initialState.repeatCount,
+      slots: initialState.slots.map((slot) => ({
         id: slot.id,
         modelId: slot.modelId,
-        messages,
-        options: { reasoning: slot.reasoning ?? false },
-        callbacks: {
-          onToken: (token) => store.appendToken(index, token),
-          onComplete: () => store.updateSlot(index, { isStreaming: false }),
-          onError: (err) =>
-            store.updateSlot(index, { isStreaming: false, error: err.message })
-        }
-      }
+        systemPrompt: slot.systemPrompt,
+        reasoning: slot.reasoning ?? false,
+        responseText: '',
+        reasoningText: '',
+        error: null,
+        attempts: slot.attempts.map((attempt) => ({
+          responseText: '',
+          reasoningText: '',
+          isStreaming: Boolean(slot.modelId.trim()),
+          error: null
+        }))
+      })),
+      userInput: initialState.userInput,
+      attachments: toStoredAttachments(initialState.attachments),
+      judgeModelId: initialState.judgeModelId,
+      judgeSystemPrompt: initialState.judgeSystemPrompt,
+      judgeResult: null,
+      judgeReasoningText: '',
+      isSending: true,
+      isJudging: false
     })
+    saveRecoveryState({
+      historyId,
+      userInput: initialState.userInput,
+      slotCount: initialState.slotCount,
+      repeatCount: initialState.repeatCount,
+      slots: initialState.slots.map((s) => ({ modelId: s.modelId, systemPrompt: s.systemPrompt, reasoning: s.reasoning ?? false })),
+      judgeModelId: initialState.judgeModelId,
+      judgeSystemPrompt: initialState.judgeSystemPrompt,
+      timestamp: Date.now()
+    })
+    startArenaRun(historyId, initialState, apiUrl, apiKey)
+  }, [apiKey, apiUrl, store])
 
-    await manager.streamAll(tasks)
+  const handleStop = useCallback(() => {
+    stopArenaRun(activeArenaId)
+  }, [activeArenaId])
 
-    // 裁判自動分析
-    if (store.judgeModelId.trim()) {
-      store.setIsJudging(true)
-      const currentState = useArenaStore.getState()
-      const responseSummary = currentState.slots
-        .filter((s) => s.modelId.trim())
-        .map((s, i) => `## 模型 ${String.fromCharCode(65 + i)}（${s.modelId}）\n${s.responseText}`)
-        .join('\n\n---\n\n')
-
-      const judgeUserContent = buildContentParts(
-        `使用者問題：${store.userInput}\n\n以下是各模型的回應：\n\n${responseSummary}\n\n請進行評比分析。`,
-        currentState.attachments
-      )
-      const judgeMessages: ChatMessage[] = [
-        { role: 'system', content: currentState.judgeSystemPrompt },
-        { role: 'user', content: judgeUserContent }
-      ]
-
-      try {
-        let judgeText = ''
-        await client.streamChat(currentState.judgeModelId, judgeMessages, {
-          onToken: (token) => {
-            judgeText += token
-            useArenaStore.getState().setJudgeResult(judgeText)
-          },
-          onComplete: (text) => {
-            useArenaStore.getState().setJudgeResult(text)
-            useArenaStore.getState().setIsJudging(false)
-          },
-          onError: (err) => {
-            useArenaStore.getState().setJudgeResult(`評審錯誤: ${err.message}`)
-            useArenaStore.getState().setIsJudging(false)
-          }
-        })
-      } catch {
-        store.setIsJudging(false)
-      }
-    }
-
-    store.setIsSending(false)
-    clearRecoveryState()
-
-    // 背景：生成標題並儲存歷史紀錄
-    void (async () => {
-      const finalState = useArenaStore.getState()
-      const settings = useSettingsStore.getState()
-      const title = await generateTitle(
-        settings.apiUrl,
-        settings.apiKey,
-        settings.titleModelId,
-        finalState.userInput,
-        finalState.attachments
-      )
-      const storedAttachments: StoredAttachment[] = finalState.attachments.map((a) => ({
-        ...a,
-        content: a.type === 'image' ? '' : a.content,
-        isImagePlaceholder: a.type === 'image'
-      }))
-      useHistoryStore.getState().saveArena({
-        title,
-        slotCount: finalState.slotCount,
-        slots: finalState.slots.map((s) => ({
-          id: s.id,
-          modelId: s.modelId,
-          systemPrompt: s.systemPrompt,
-          reasoning: s.reasoning ?? false,
-          responseText: s.responseText,
-          error: s.error
-        })),
-        userInput: finalState.userInput,
-        attachments: storedAttachments,
-        judgeModelId: finalState.judgeModelId,
-        judgeSystemPrompt: finalState.judgeSystemPrompt,
-        judgeResult: finalState.judgeResult
-      })
-    })()
-  }, [store, apiUrl, apiKey])
-
-  const hasResponses = store.slots.some((s) => s.responseText || s.isStreaming)
+  const hasResponses = store.slots.some((s) =>
+    s.attempts.some((attempt) => attempt.responseText || attempt.reasoningText || attempt.isStreaming)
+  )
+  const firstSystemPrompt = store.slots[0]?.systemPrompt ?? ''
+  const canUnifySystemPrompt = firstSystemPrompt.trim().length > 0
 
   return (
     <div className="flex flex-col p-4 md:p-5 gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">模型競技場</h2>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-slate-500 dark:text-slate-400 mr-1">模型數量</span>
-          {[2, 3, 4].map((n) => (
-            <button
-              type="button"
-              key={n}
-              onClick={() => store.setSlotCount(n)}
-              className={`w-8 h-8 text-sm rounded-lg transition-colors cursor-pointer font-mono font-medium ${
-                store.slotCount === n
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700'
-              }`}
-            >
-              {n}
-            </button>
-          ))}
+        <div className="flex w-full flex-col gap-2 rounded-lg bg-slate-50 p-3 dark:bg-slate-900 sm:w-auto sm:flex-row sm:items-center">
+          <label htmlFor="arena-slot-count" className="flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400 sm:justify-start">
+            <span>模型數量</span>
+            <span className="font-mono font-semibold text-primary-600 dark:text-primary-400">{store.slotCount} 個</span>
+          </label>
+          <input
+            id="arena-slot-count"
+            type="range"
+            min={MIN_ARENA_SLOTS}
+            max={MAX_ARENA_SLOTS}
+            step="1"
+            value={store.slotCount}
+            aria-label="競技場模型數量"
+            onChange={(e) => store.setSlotCount(Number(e.target.value))}
+            className="h-2 w-full min-w-0 cursor-pointer accent-primary-600 sm:w-40"
+          />
+          <span className="hidden text-[11px] font-mono text-slate-400 dark:text-slate-500 sm:inline">{MIN_ARENA_SLOTS}–{MAX_ARENA_SLOTS}</span>
+          <label htmlFor="arena-repeat-count" className="flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400 sm:justify-start">
+            <span>重複回答次數</span>
+            <span className="font-mono font-semibold text-primary-600 dark:text-primary-400">{store.repeatCount} 次</span>
+          </label>
+          <input
+            id="arena-repeat-count"
+            type="range"
+            min="1"
+            max="5"
+            step="1"
+            value={store.repeatCount}
+            aria-label="競技場重複回答次數"
+            disabled={store.isSending}
+            onChange={(e) => store.setRepeatCount(Number(e.target.value))}
+            className="h-2 w-full min-w-0 cursor-pointer accent-primary-600 disabled:cursor-not-allowed sm:w-24"
+          />
+          <span className="hidden text-[11px] font-mono text-slate-400 dark:text-slate-500 sm:inline">1–5</span>
+          <button
+            type="button"
+            onClick={() => store.setAllSystemPrompts(firstSystemPrompt)}
+            disabled={!canUnifySystemPrompt || store.isSending}
+            title={canUnifySystemPrompt ? '將模型 A 的系統提示詞套用到全部模型' : '請先在模型 A 選擇或輸入系統提示詞'}
+            className="min-h-9 rounded-lg border border-primary-600 px-3 py-1.5 text-xs font-medium text-primary-700 transition-colors hover:bg-primary-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 dark:border-primary-500 dark:text-primary-300 dark:hover:bg-primary-950/30 dark:disabled:border-slate-700 dark:disabled:text-slate-600"
+          >
+            統一提示詞
+          </button>
         </div>
       </div>
 
@@ -259,6 +233,7 @@ export function ArenaPage(): JSX.Element {
             modelId={slot.modelId}
             systemPrompt={slot.systemPrompt}
             reasoning={slot.reasoning}
+            showPromptLibrary
             onModelIdChange={(v) => store.updateSlot(index, { modelId: v })}
             onSystemPromptChange={(v) => store.updateSlot(index, { systemPrompt: v })}
             onReasoningChange={(v) => store.updateSlot(index, { reasoning: v })}
@@ -289,6 +264,7 @@ export function ArenaPage(): JSX.Element {
         userInput={store.userInput}
         onInputChange={store.setUserInput}
         onSend={handleSend}
+        onStop={handleStop}
         isSending={store.isSending}
       />
 
@@ -300,6 +276,7 @@ export function ArenaPage(): JSX.Element {
         }`}>
           {store.slots.map((slot, index) => {
             const isCollapsed = collapsedSlots.has(index)
+            const isSlotStreaming = slot.attempts.some((attempt) => attempt.isStreaming)
             return (
               <div
                 key={slot.id}
@@ -312,7 +289,10 @@ export function ArenaPage(): JSX.Element {
                   <span className="text-xs text-slate-400 dark:text-slate-600 truncate font-mono flex-1">
                     {slot.modelId || '未設定'}
                   </span>
-                  {slot.isStreaming && (
+                  {slot.attempts.length > 1 && (
+                    <span className="shrink-0 text-[11px] text-slate-400 dark:text-slate-500">{slot.attempts.length} 次</span>
+                  )}
+                  {isSlotStreaming && (
                     <svg className="animate-spin w-3 h-3 text-primary-500 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
@@ -330,12 +310,20 @@ export function ArenaPage(): JSX.Element {
                   </button>
                 </div>
                 {!isCollapsed && (
-                  <div className="overflow-y-auto p-3 min-h-[200px] max-h-[500px]">
-                    <StreamingText
-                      text={slot.responseText}
-                      isStreaming={slot.isStreaming}
-                      error={slot.error}
-                    />
+                  <div className="overflow-y-auto p-3 min-h-[200px] max-h-[500px] space-y-3">
+                    {slot.attempts.map((attempt, attemptIndex) => (
+                      <div key={`${slot.id}-attempt-${attemptIndex}`} className="rounded-lg border border-slate-200 dark:border-slate-800 p-2.5">
+                        <div className="mb-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                          第 {attemptIndex + 1} 次回答
+                        </div>
+                        <StreamingText
+                          text={attempt.responseText}
+                          reasoningText={attempt.reasoningText}
+                          isStreaming={attempt.isStreaming}
+                          error={attempt.error}
+                        />
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -360,9 +348,10 @@ export function ArenaPage(): JSX.Element {
             onModelIdChange={store.setJudgeModelId}
             onSystemPromptChange={store.setJudgeSystemPrompt}
           />
-          {store.judgeResult && (
+          {(store.judgeResult || store.judgeReasoningText || store.isJudging) && (
             <div className="mt-3 p-4 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 max-h-[500px] overflow-y-auto">
-              <MarkdownRenderer content={store.judgeResult} />
+              <ReasoningDisclosure content={store.judgeReasoningText} isStreaming={store.isJudging} />
+              {store.judgeResult && <MarkdownRenderer content={store.judgeResult} />}
               {store.isJudging && (
                 <span className="inline-flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 mt-2">
                   <svg className="animate-spin w-3 h-3 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

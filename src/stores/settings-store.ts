@@ -1,26 +1,41 @@
 import { create } from 'zustand'
 import { DEFAULT_API_URL } from '@/constants/config'
+import type { SystemPrompt } from '@/types/models'
 
 const STORAGE_KEY = 'llm-arena-settings'
-const DEFAULT_TITLE_MODEL = 'qwen/qwen3-vl-8b-instruct'
+const DEFAULT_TITLE_MODEL = 'openrouter/free'
+const DEFAULT_SYSTEM_PROMPTS: SystemPrompt[] = []
 
 const DEFAULT_MODEL_LIST: string[] = [
-  'google/gemini-3-flash-preview',
-  'google/gemini-3.1-pro-preview',
-  'moonshotai/kimi-k2.5',
-  'anthropic/claude-sonnet-4.6',
-  'z-ai/glm-5.1',
-  'minimax/minimax-m2.7',
-  'qwen/qwen3.5-397b-a17b',
-  'qwen/qwen3.6-plus',
-  'x-ai/grok-4.20',
-  'deepseek/deepseek-v3.2'
+  'moonshotai/kimi-k2.6',
+  'deepseek/deepseek-v4-flash-0731',
+  'z-ai/glm-5.3',
+  'z-ai/glm-5.3-flash',
+  'qwen/qwen3.8-27b',
+  'openai/gpt-5.6-luna'
 ]
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function parseSystemPrompts(value: unknown): SystemPrompt[] {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap((entry) => {
+    if (!isRecord(entry)) return []
+    const id = typeof entry.id === 'string' ? entry.id.trim() : ''
+    const name = typeof entry.name === 'string' ? entry.name.trim() : ''
+    const content = typeof entry.content === 'string' ? entry.content.trim() : ''
+    return id && name && content ? [{ id, name, content }] : []
+  })
+}
 
 interface SettingsState {
   apiUrl: string
   apiKey: string
   modelList: string[]
+  systemPrompts: SystemPrompt[]
   titleModelId: string
   isLoaded: boolean
   setApiUrl: (url: string) => void
@@ -28,15 +43,18 @@ interface SettingsState {
   setTitleModelId: (modelId: string) => void
   addModel: (modelId: string) => void
   removeModel: (modelId: string) => void
+  addSystemPrompts: (prompts: SystemPrompt[]) => number
+  removeSystemPrompt: (id: string) => void
   loadSettings: () => void
   saveSettings: () => void
 }
 
-function persistSettings(state: { apiUrl: string; apiKey: string; modelList: string[]; titleModelId: string }): void {
+function persistSettings(state: { apiUrl: string; apiKey: string; modelList: string[]; systemPrompts: SystemPrompt[]; titleModelId: string }): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     apiUrl: state.apiUrl,
     apiKey: state.apiKey,
     modelList: state.modelList,
+    systemPrompts: state.systemPrompts,
     titleModelId: state.titleModelId
   }))
 }
@@ -45,6 +63,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   apiUrl: DEFAULT_API_URL,
   apiKey: '',
   modelList: DEFAULT_MODEL_LIST,
+  systemPrompts: DEFAULT_SYSTEM_PROMPTS,
   titleModelId: DEFAULT_TITLE_MODEL,
   isLoaded: false,
 
@@ -77,6 +96,36 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     persistSettings({ ...get(), modelList: updated })
   },
 
+  addSystemPrompts: (prompts) => {
+    const current = get().systemPrompts
+    const existing = new Set(current.map((prompt) => `${prompt.name}\u0000${prompt.content}`))
+    const additions = prompts
+      .map((prompt) => ({
+        ...prompt,
+        name: prompt.name.trim(),
+        content: prompt.content.trim()
+      }))
+      .filter((prompt) => prompt.id && prompt.name && prompt.content)
+      .filter((prompt) => {
+        const key = `${prompt.name}\u0000${prompt.content}`
+        if (existing.has(key)) return false
+        existing.add(key)
+        return true
+      })
+    if (additions.length === 0) return 0
+
+    const updated = [...current, ...additions]
+    set({ systemPrompts: updated })
+    persistSettings({ ...get(), systemPrompts: updated })
+    return additions.length
+  },
+
+  removeSystemPrompt: (id) => {
+    const updated = get().systemPrompts.filter((prompt) => prompt.id !== id)
+    set({ systemPrompts: updated })
+    persistSettings({ ...get(), systemPrompts: updated })
+  },
+
   loadSettings: () => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
@@ -86,6 +135,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           apiUrl: parsed.apiUrl || DEFAULT_API_URL,
           apiKey: parsed.apiKey || '',
           modelList: Array.isArray(parsed.modelList) ? parsed.modelList : DEFAULT_MODEL_LIST,
+          systemPrompts: parseSystemPrompts(parsed.systemPrompts),
           titleModelId: parsed.titleModelId || DEFAULT_TITLE_MODEL,
           isLoaded: true
         })

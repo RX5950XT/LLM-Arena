@@ -1,545 +1,208 @@
-# LLM Arena — 大型語言模型競技場
+# LLM Arena
 
-一個基於瀏覽器的 LLM 評比與辯論平台，透過 [OpenRouter](https://openrouter.ai) API 同時呼叫多個大型語言模型，讓你對模型進行並排比較或設計結構化的 AI 辯論場景。
+LLM Arena 是一個在瀏覽器執行的模型比較工具。它使用 [OpenRouter](https://openrouter.ai) API，讓你把同一個問題送給多個模型、比較同一模型的不同供應商，或安排兩個模型進行多回合辯論。
 
----
+API Key 只保存在目前瀏覽器的 `localStorage`，沒有後端代替你保管。這個專案適合個人或私有部署，不要把含有自己的 API Key 的畫面公開給其他人使用。
 
-## 目錄
-
-- [功能特色](#功能特色)
-- [技術棧](#技術棧)
-- [專案結構](#專案結構)
-- [快速開始](#快速開始)
-- [使用說明](#使用說明)
-  - [設定頁面](#設定頁面)
-  - [模型競技場](#模型競技場)
-  - [AI 辯論](#ai-辯論)
-  - [對話紀錄](#對話紀錄)
-- [架構設計](#架構設計)
-  - [資料流](#資料流)
-  - [串流處理](#串流處理)
-  - [狀態管理](#狀態管理)
-- [核心元件說明](#核心元件說明)
-- [裁判評分系統](#裁判評分系統)
-- [設定與配置](#設定與配置)
-- [開發指南](#開發指南)
-
----
-
-## 功能特色
+## 功能
 
 ### 模型競技場
 
-- **2 至 4 個模型並排比較**：同時向多個模型發送同一個問題，即時查看差異
-- **並行串流輸出**：所有模型同時開始回應，不需逐一等待
-- **裁判自動評分**：由你指定的「裁判模型」對所有回應進行 5 維度評分（正確性、完整性、清晰度、實用性、創意性）
-- **推理模式**：可為各模型單獨啟用 Extended Thinking（推理）模式
-- **自訂系統提示詞**：每個模型插槽都可設定獨立的 System Prompt
+路徑：`/#/`
+
+- 用水平拉桿選擇 1–15 個模型。
+- 可設定每個模型重複回答 1–5 次；每次回答獨立產生並分開顯示。
+- 所有模型同時串流回答同一個問題，方便並排比較。
+- 每個模型可單獨設定模型 ID、系統提示詞和推理模式。
+- 可從設定頁的提示詞庫套用系統提示詞；按「統一提示詞」可把第一個模型的提示詞套用到全部模型。
+- 可指定裁判模型。裁判會一起讀取每個模型的系統提示詞、使用者問題和每次模型回答，再依任務類型評估正確性、指令遵循、完整性、清晰度、實用性、創意和角色扮演品質，並計算每個模型的平均總分。
+- 生成中可按「強制暫停」；輸入和已收到的內容會保留，之後可重新發送。
+
+### OpenRouter 供應商比較
+
+路徑：`/#/providers`
+
+- 先輸入一個模型 ID，查詢 OpenRouter 回傳的可用 endpoint。
+- 可選 1 個或多個供應商；每個供應商都會收到相同的系統提示詞、問題和附件。
+- 使用 `provider.only` 鎖定實際供應商，避免回退到其他供應商。
+- 顯示供應商的上下文長度與價格資料，並比較各自的回應和推理內容。
+- 生成中會即時保存各供應商回應；切換到其他對話後，仍可回來查看已收到的內容。
+- 生成中可強制暫停，保留目前結果並重新發送。
 
 ### AI 辯論
 
-- **正方 vs 反方**：兩個 AI 模型就你設定的議題展開多回合辯論
-- **可設定回合數**（1–10 回合）
-- **四位評判裁判**：辯論結束後自動啟動四位評判模型並行評估：
-  1. **邏輯分析裁判**：論點邏輯嚴密性與推理有效性
-  2. **論據品質裁判**：引用證據的可靠性與數據準確性
-  3. **說服力裁判**：修辭技巧、語言說服力與情感訴求
-  4. **綜合評判裁判**：整合三位評審意見，給出最終總評與勝負判定
+路徑：`/#/debate`
 
-### 對話紀錄
+- 設定正方模型、反方模型、1–10 回合的辯論長度，以及由正方或反方先開始。
+- 每回合從選定的起始方發言，再由另一方回應；模型會收到完整的前文。
+- 辯論結束後，前三位專科裁判並行評估，最後由綜合裁判整合結果。
+- 完成後可下載 PDF，內容依序包含正反方發言與四位裁判回應；PDF 支援 Markdown、GFM 表格與 KaTeX 數學公式，不匯出 reasoning。
+- 生成中可強制暫停；保留議題和已完成的發言，之後可重新開始。
 
-- **自動儲存**：競技場與辯論的對話在完成後自動儲存至 localStorage
-- **AI 生成標題**：使用 Vision Language Model 自動為每筆紀錄生成摘要標題（支援圖片辨識）
-- **側邊欄展開式清單**：點擊「模型競技場」或「AI 辯論」導覽項目即可展開歷史清單
-- **繼續對話**：從歷史紀錄載入後，再次發送會更新原有紀錄，而非建立新紀錄
-- **匯出 / 匯入**：可在設定頁面將所有紀錄匯出為 JSON 檔案，或從 JSON 合併匯入（去重）
-- **上限 50 筆**：超出時自動移除最舊的紀錄
+### 共用功能
 
-### 通用功能
-
-- **Markdown 渲染**：完整支援 GFM 語法、程式碼高亮、表格
-- **LaTeX / KaTeX 數學公式**：支援行內與區塊數學公式渲染
-- **多媒體附件**：拖放上傳圖片（PNG / JPEG / GIF / WebP）或文字檔案（TXT / MD / JSON / CSV），附件最大 20 MB
-- **模型清單管理**：在設定頁面維護常用模型清單，輸入框可直接下拉選取
-- **深色 / 淺色主題**：一鍵切換，設定持久化
-- **本地持久化**：API Key、URL、模型清單、對話紀錄均儲存至 localStorage
-
----
-
-## 技術棧
-
-| 類別     | 技術                                            |
-| -------- | ----------------------------------------------- |
-| 框架     | React 18 + TypeScript 5                         |
-| 建置工具 | Vite 5                                          |
-| 樣式     | Tailwind CSS 3（深色模式）                      |
-| 狀態管理 | Zustand 5                                       |
-| 路由     | React Router 6（HashRouter）                    |
-| Markdown | react-markdown + remark-gfm + rehype-raw        |
-| 數學公式 | KaTeX 0.16                                      |
-| API      | OpenRouter Chat Completions（SSE 串流）         |
-| 字型     | IBM Plex Sans（介面）+ JetBrains Mono（程式碼） |
-
----
-
-## 專案結構
-
-```
-LLM_Arena/
-├── index.html
-├── package.json
-├── vite.config.ts
-├── tailwind.config.ts
-├── tsconfig.json
-├── postcss.config.cjs
-├── README.md
-│
-├── Docs/
-│   └── DEVLOG.md                # 開發紀錄
-│
-└── src/
-    ├── main.tsx                     # 應用程式入口
-    ├── App.tsx                      # 路由設定 + 初始化（含 loadHistory）
-    │
-    ├── components/
-    │   ├── layout/
-    │   │   ├── MainLayout.tsx       # 主佈局（Sidebar + 內容區）
-    │   │   └── Sidebar.tsx          # 側邊欄導航 + 歷史展開面板 + 主題切換
-    │   ├── arena/
-    │   │   └── ArenaPage.tsx        # 模型競技場頁面
-    │   ├── debate/
-    │   │   └── DebatePage.tsx       # AI 辯論頁面
-    │   ├── settings/
-    │   │   └── SettingsPage.tsx     # 設定頁面（含匯出 / 匯入 JSON）
-    │   └── shared/
-    │       ├── ModelSlot.tsx        # 模型插槽（輸入 + 下拉 + System Prompt）
-    │       ├── DropZone.tsx         # 拖放上傳區域
-    │       ├── StreamingText.tsx    # 節流串流文字顯示
-    │       └── MarkdownRenderer.tsx # Markdown + KaTeX 渲染器
-    │
-    ├── services/
-    │   ├── openrouter-client.ts     # OpenRouter API 客戶端（streamChat / chat）
-    │   ├── streaming-manager.ts     # 多模型並行串流管理
-    │   ├── debate-orchestrator.ts   # 辯論回合編排引擎
-    │   ├── file-handler.ts          # 檔案處理（base64 轉換、內容組裝）
-    │   └── title-generator.ts       # AI 標題生成（呼叫 Vision LLM）
-    │
-    ├── stores/
-    │   ├── arena-store.ts           # 競技場狀態（含 restoreFromHistory）
-    │   ├── debate-store.ts          # 辯論狀態（含 restoreFromHistory）
-    │   ├── history-store.ts         # 對話紀錄持久化（localStorage，上限 50 筆）
-    │   ├── settings-store.ts        # 設定狀態（API 設定 + 模型清單 + titleModelId）
-    │   └── theme-store.ts           # 主題狀態
-    │
-    ├── types/
-    │   ├── models.ts                # ChatMessage、Attachment、StreamCallbacks 等
-    │   ├── arena.ts                 # ArenaSlot、ArenaState
-    │   ├── debate.ts                # DebateMessage、JudgeResult、DebateState
-    │   └── history.ts               # StoredAttachment、ArenaHistoryEntry、DebateHistoryEntry、HistoryExport
-    │
-    ├── constants/
-    │   ├── config.ts                # 上傳限制、插槽數量上下限等
-    │   └── default-prompts.ts       # 裁判與辯手的預設 System Prompts
-    │
-    └── styles/
-        └── globals.css              # Tailwind 基礎樣式 + 自訂捲軸
-```
-
----
+- OpenRouter reasoning 可逐模型開啟，思考內容預設折疊，可手動展開。
+- 支援 Markdown、GFM 表格、程式碼高亮和 KaTeX 數學公式。
+- 輸入區可拖放或選取圖片與文字附件，單檔上限 20 MB。
+- 設定頁可批量匯入 `.txt`／`.md` 系統提示詞，檔名會成為提示詞名稱。
+- 三個執行頁都會把紀錄保存到瀏覽器；側邊欄可載入、刪除、匯出和匯入紀錄。
+- 支援深色／淺色模式與手機版側邊欄。
 
 ## 快速開始
 
 ### 需求
 
-- Node.js 18 以上
-- npm 8 以上
-- [OpenRouter](https://openrouter.ai) 帳號與 API Key
+- Node.js 18 或更新版本
+- npm 8 或更新版本
+- OpenRouter 帳號與 API Key
 
-### 安裝與執行
+### 安裝
 
 ```bash
-# 1. 克隆專案
-git clone <repository-url>
-cd LLM_Arena
-
-# 2. 安裝依賴
 npm install
-
-# 3. 啟動開發伺服器
 npm run dev
 ```
 
-開發伺服器預設於 `http://localhost:5173` 啟動。
+開發伺服器預設位於 `http://localhost:5173`。
 
-### 生產建置
+### 建置與預覽
 
 ```bash
-npm run build      # 輸出至 dist/
-npm run preview    # 本地預覽生產版本
+npm run build
+npm run preview
 ```
 
-> **部署提示**：由於使用 HashRouter，`dist/` 目錄可以直接部署於任何靜態主機（GitHub Pages、Netlify、Vercel 等），不需特殊伺服器設定。
+`npm run build` 會先執行 TypeScript 檢查，再建立 Vite 生產檔案到 `dist/`。
 
----
+## 使用方式
 
-## 使用說明
+### 1. 設定 OpenRouter
 
-### 設定頁面
+開啟 `/#/settings`，填入：
 
-在開始使用之前，請先至**設定頁面**（側邊欄底部齒輪圖示）完成基本設定。
+| 設定 | 用途 |
+| --- | --- |
+| API URL | 預設為 `https://openrouter.ai/api/v1` |
+| API Key | 從 [OpenRouter Keys](https://openrouter.ai/keys) 取得 |
+| 話題命名模型 | 完成後替對話或辯論產生標題，預設為 `openrouter/free` |
 
-#### OpenRouter API 設定
+設定會即時保存，不需要另外按儲存。
 
-| 欄位         | 說明                                                                         |
-| ------------ | ---------------------------------------------------------------------------- |
-| API URL      | OpenRouter 端點，預設為 `https://openrouter.ai/api/v1`                     |
-| API Key      | 前往 [openrouter.ai/keys](https://openrouter.ai/keys) 取得，格式為 `sk-or-...` |
-| 話題命名模型 | 用於自動生成對話標題的模型，預設為 `qwen/qwen3-vl-8b-instruct`（Vision LLM）|
+### 2. 管理模型清單
 
-所有設定均即時儲存，無需手動按下儲存按鈕。
+設定頁的「模型清單」可以新增或刪除常用模型。模型 ID 使用 OpenRouter 格式，例如：
 
-#### 模型清單管理
-
-在設定頁面右側的「模型清單」面板中，你可以維護一份常用模型的快速選取清單：
-
-- 在輸入框中輸入模型 ID（格式：`提供商/模型名稱`），按 Enter 或點擊「新增」
-- 滑鼠移至模型列表項目可顯示刪除按鈕
-- 此清單會同步到競技場與辯論頁面的所有模型輸入框，可直接下拉選取
-
-> 可至 [openrouter.ai/models](https://openrouter.ai/models) 查詢所有可用模型 ID。
-
-#### 對話紀錄管理
-
-設定頁面左側的「對話紀錄」區塊顯示目前儲存的筆數，並提供：
-
-- **匯出 JSON**：將所有競技場與辯論紀錄匯出為單一 JSON 檔案（`llm-arena-history-YYYY-MM-DD.json`）
-- **匯入 JSON**：選取 JSON 檔案後，以合併（去重）方式匯入，不會覆蓋現有紀錄
-
----
-
-### 模型競技場
-
-**路徑：** `/`（首頁）
-
-#### 基本使用流程
-
-1. **選擇模型數量**：點擊右上角的「2 / 3 / 4」按鈕，決定要同時比較幾個模型
-2. **設定每個模型**：
-   - 在輸入框輸入模型 ID，或從下拉清單中選取
-   - 點擊「系統提示詞」可展開 System Prompt 編輯區
-   - 點擊「推理」按鈕可啟用 Extended Thinking 模式（橙色表示已啟用）
-3. **輸入問題**：在底部輸入框輸入你的問題
-4. **上傳附件**（可選）：拖放圖片或文字檔案到輸入框下方區域
-5. **發送**：點擊「發送」或按 `Ctrl + Enter`
-
-所有模型將**同時開始串流回應**，可即時觀察各模型的輸出差異。
-
-#### 裁判評分
-
-在輸入區域下方可設定裁判模型：
-
-- 輸入裁判模型 ID 並（可選）設定裁判 System Prompt
-- 全部模型回應完成後，裁判會自動啟動並對所有回應進行評分
-- 評分以 Markdown 格式輸出，預設包含 5 個維度（1–10 分）
-
-#### 快捷鍵
-
-| 快捷鍵         | 功能         |
-| -------------- | ------------ |
-| `Ctrl + Enter` | 發送問題     |
-| `Escape`       | 停止所有串流 |
-
----
-
-### AI 辯論
-
-**路徑：** `/debate`
-
-#### 辯論設定
-
-| 欄位       | 說明                                         |
-| ---------- | -------------------------------------------- |
-| 辯論議題   | 輸入辯論主題（如「人工智慧將取代人類工作」） |
-| 回合數     | 1–10 回合，預設 3 回合                      |
-| 正方模型   | 支持議題的 AI 模型                           |
-| 反方模型   | 反對議題的 AI 模型                           |
-| 系統提示詞 | 每方均有預設辯手 Prompt，可自訂修改          |
-
-#### 辯論流程
-
-1. 填寫議題、選擇正反方模型，設定回合數
-2. 可上傳附件作為辯論背景資料
-3. 點擊「開始辯論」啟動
-4. 每回合依序：**正方發言 → 反方回應**，即時串流顯示
-5. 所有回合結束後，四位評判模型**並行啟動**進行分析
-
-#### 四位評判裁判
-
-| 裁判         | 評估面向                                 |
-| ------------ | ---------------------------------------- |
-| 邏輯分析裁判 | 論點邏輯嚴密性、推理有效性、邏輯謬誤檢查 |
-| 論據品質裁判 | 引用證據的可靠性、數據準確性、來源品質   |
-| 說服力裁判   | 修辭技巧、語言說服力、情感訴求有效性     |
-| 綜合評判裁判 | 整合三位評審意見，給出最終總評與勝負判定 |
-
-評判結果以 2×2 網格排列顯示，每位評判均即時串流輸出分析報告。
-
----
-
-### 對話紀錄
-
-競技場與辯論的每次對話在**所有串流（含裁判）完成後**自動儲存，不影響 UI 回應速度。
-
-#### 側邊欄歷史面板
-
-點擊「模型競技場」或「AI 辯論」導覽項目，右側箭頭指示展開 / 收合狀態：
-
-- **展開**：顯示該功能的歷史紀錄清單（標題 + 相對時間）
-- **點擊紀錄**：還原所有設定與回應內容至頁面，可直接再次發送
-- **再次發送**：會更新現有紀錄，而非新增紀錄
-- **「+ 新對話」按鈕**：清除所有輸入、回應、附件與裁判結果，開始全新對話
-- **刪除**：滑鼠移至紀錄項目，點擊 × 刪除單筆
-
-#### 標題自動生成
-
-紀錄標題由「話題命名模型」根據問題或議題文字（含圖片）自動生成，最長 40 字。若 API 呼叫失敗，則截取輸入文字前 40 字作為備用標題。
-
----
-
-## 架構設計
-
-### 資料流
-
-#### 競技場資料流
-
-```
-使用者輸入
-    │
-    ▼
-ArenaPage.handleSend()
-    │
-    ├── 建立 StreamTask[]（每個啟用的模型插槽）
-    │
-    ▼
-StreamingManager.streamAll(tasks)
-    │
-    ├── 並行啟動 Promise.allSettled()
-    │   ├── Task A → OpenRouterClient.streamChat() → appendToken(A, token)
-    │   ├── Task B → OpenRouterClient.streamChat() → appendToken(B, token)
-    │   └── ...
-    │
-    ▼（全部完成）
-可選：OpenRouterClient.streamChat(judgeModel) → setJudgeResult(text)
-    │
-    ▼（背景 void IIFE）
-generateTitle() → historyStore.saveArena()
+```text
+openai/gpt-4o
 ```
 
-#### 辯論資料流
+新環境目前預設包含：
 
-```
-使用者設定
-    │
-    ▼
-DebateOrchestrator.startDebate()
-    │
-    ▼ 回合迴圈
-    ├── speak('for')     → 正方串流 → appendStreamToken() → appendMessage()
-    └── speak('against') → 反方串流 → appendStreamToken() → appendMessage()
-    │
-    ▼（辯論結束）
-runJudges()
-    ├── 並行啟動前三位評判（邏輯、論據、說服力）
-    └── 三位完成後 → 啟動綜合評判裁判
-    │
-    ▼（背景 void IIFE）
-generateTitle() → historyStore.saveDebate()
+```text
+moonshotai/kimi-k2.6
+deepseek/deepseek-v4-flash-0731
+z-ai/glm-5.3
+z-ai/glm-5.3-flash
+qwen/qwen3.8-27b
+openai/gpt-5.6-luna
 ```
 
-### 串流處理
+### 3. 匯入系統提示詞
 
-`OpenRouterClient.streamChat()` 使用 **Fetch API + ReadableStream** 實作 SSE 串流解析：
+在設定頁的「系統提示詞」區塊批量拖入 `.txt` 或 `.md` 檔案，也可以按「選擇檔案」。每個檔案會變成一筆提示詞，檔名會去掉副檔名後作為名稱；重複或空白內容會略過。
 
-```
-HTTP Response (SSE)
-    │
-    ▼
-ReadableStream.getReader()
-    │
-    ▼ 逐塊讀取
-TextDecoder.decode()
-    │
-    ▼ 按換行符分割
-'data: {...}' → JSON.parse() → delta.content
-    │
-    ▼
-callbacks.onToken(token)  ──→ Zustand store 更新
-callbacks.onComplete()    ──→ 串流結束通知
-callbacks.onError()       ──→ 錯誤處理
-```
+提示詞庫目前提供給模型競技場和供應商比較。競技場的「統一提示詞」會直接複製模型 A 目前的內容，不會修改提示詞庫本身。
 
-每個串流請求都綁定一個獨立的 `AbortController`，可按模型單獨取消或全部取消。
+### 4. 發送與重新發送
 
-`StreamingText` 元件在串流期間對 Markdown + KaTeX 渲染節流（每 120ms 更新一次），串流結束後立即刷新，避免高頻渲染造成效能問題。
+三個執行頁在生成中都會把「發送」換成「強制暫停」：
 
-### 狀態管理
+1. 按下「強制暫停」會取消正在進行的串流請求。
+2. 問題、議題、附件和已收到的部分回答會保留。
+3. 按回「發送」會清除上一輪半成品，重新送出完整請求。
 
-所有狀態透過 Zustand 管理，分為五個獨立 Store：
+生成中的三種紀錄會即時保存；切換頁面或切換其他對話時，原本的請求仍會在背景跑到結束，回來就能看到最新結果。按「強制暫停」才會停止請求。頁面意外重新整理時，未完成的設定會暫存 15 分鐘，重新開啟後可以再次發送。
 
-| Store             | 持久化       | 主要職責                                   |
-| ----------------- | ------------ | ------------------------------------------ |
-| `settings-store`  | localStorage | API URL、API Key、模型清單、話題命名模型   |
-| `theme-store`     | localStorage | 深色 / 淺色主題                            |
-| `history-store`   | localStorage | 競技場與辯論紀錄（各上限 50 筆）           |
-| `arena-store`     | 記憶體       | 插槽配置、回應文字、裁判結果               |
-| `debate-store`    | 記憶體       | 辯論配置、訊息歷史、評判結果               |
+背景執行只保證在同一個瀏覽器分頁內；重新整理或關閉分頁會中斷網路請求，但已保存的部分結果仍會留下。
 
-#### 歷史紀錄儲存策略
+### 5. 管理對話紀錄
 
-- **圖片附件**：僅儲存檔名等 metadata，base64 內容以空字串取代（節省 localStorage 空間）
-- **pruneToMax()**：按 `updatedAt` 降冪排序，保留最新 50 筆
-- **activeArenaId / activeDebateId**：追蹤當前載入的紀錄 ID，`saveArena` / `saveDebate` 根據此 ID 決定更新或新增
+- 競技場、辯論和供應商比較各保留最多 50 筆紀錄。
+- 生成中的紀錄也會出現在側邊欄。
+- 可在設定頁匯出單一 JSON，或合併匯入其他 JSON。
+- 圖片在歷史紀錄中只保留附件資訊，不保留 base64 內容，以減少儲存量。
 
----
+## 路由
 
-## 核心元件說明
+| 功能 | Hash 路徑 |
+| --- | --- |
+| 模型競技場 | `/#/` |
+| AI 辯論 | `/#/debate` |
+| 供應商比較 | `/#/providers` |
+| 設定 | `/#/settings` |
 
-### `OpenRouterClient`
+專案使用 `HashRouter`，建置後可直接放到 Vercel、GitHub Pages 或其他靜態主機，不需要設定伺服器端路由轉址。
 
-位於 `src/services/openrouter-client.ts`
+## 技術架構
 
-| 方法                                                             | 說明                  |
-| ---------------------------------------------------------------- | --------------------- |
-| `streamChat(modelId, messages, callbacks, signal?, options?)`  | SSE 串流對話          |
-| `chat(modelId, messages, signal?, options?)`                   | 一次性非串流對話      |
-| `testConnection()`                                             | 測試 API 連線是否正常 |
+| 類別 | 技術 |
+| --- | --- |
+| UI | React 18 + TypeScript |
+| 建置 | Vite 5 |
+| 樣式 | Tailwind CSS 3 |
+| 狀態 | Zustand 5 |
+| 路由 | React Router 6 + `HashRouter` |
+| 文字 | `react-markdown`、`remark-gfm`、`rehype-highlight` |
+| 數學公式 | KaTeX |
+| API | OpenRouter Chat Completions + SSE |
 
-`options.reasoning` 可控制推理模式：
+### 主要資料流
 
-- `true` → 帶入 `{ reasoning: { effort: "high" } }`
-- `false` → 帶入 `{ reasoning: { enabled: false } }`
-
-### `StreamingManager`
-
-位於 `src/services/streaming-manager.ts`
-
-| 方法                 | 說明                 |
-| -------------------- | -------------------- |
-| `streamAll(tasks)` | 並行啟動所有串流任務 |
-| `cancelAll()`      | 中止所有進行中的串流 |
-| `cancelOne(id)`    | 中止指定任務         |
-
-### `DebateOrchestrator`
-
-位於 `src/services/debate-orchestrator.ts`
-
-| 方法             | 說明                            |
-| ---------------- | ------------------------------- |
-| `startDebate()` | 啟動完整辯論流程（回合 + 評判） |
-| `stop()`        | 停止辯論                        |
-
-辯論內部會傳遞完整對話歷史給每一輪發言的模型，確保模型能根據前幾輪的辯論內容進行有效回應。
-
-### `MarkdownRenderer`
-
-位於 `src/components/shared/MarkdownRenderer.tsx`
-
-包含以下特殊處理邏輯：
-
-- **`fixTextBlocks()`**：修復部分模型在 `\text{}` 內使用 `$` 符號導致的解析錯誤
-- **`joinSplitInlineMath()`**：合併被換行符分割的行內數學表達式
-- **`preRenderMath()`**：直接使用 KaTeX 預渲染數學區塊，跳過 remark-math 的解析層
-
-### `ModelSlot`
-
-位於 `src/components/shared/ModelSlot.tsx`
-
-使用 **React Portal** 渲染下拉清單至 `document.body`，避免被父容器的 `overflow: hidden` 裁切。透過 `getBoundingClientRect()` 動態計算位置，並監聽 scroll / resize 事件即時更新。
-
-### `title-generator`
-
-位於 `src/services/title-generator.ts`
-
-呼叫 `OpenRouterClient.chat()`（非串流），傳入問題文字與圖片附件，要求模型以 15 字以內輸出標題。若 API 設定缺失或呼叫失敗，回傳截斷的輸入文字作為 fallback。
-
----
-
-## 裁判評分系統
-
-### 競技場裁判（預設 System Prompt）
-
-請對以下各模型回應進行評比，依照以下 5 個維度各打 1-10 分，並給出總結評語：
-
-| 維度   | 說明                       |
-| ------ | -------------------------- |
-| 正確性 | 內容是否正確、有無事實錯誤 |
-| 完整性 | 是否充分回答問題的各面向   |
-| 清晰度 | 表達是否清楚、結構是否良好 |
-| 實用性 | 對使用者是否有實際幫助     |
-| 創意性 | 是否提供獨到見解或解法     |
-
-### 辯論評判裁判（預設 System Prompts）
-
-所有裁判均接收完整的辯論紀錄（議題 + 所有回合的正反方發言），各自從專業視角進行評估。綜合評判裁判另外接收前三位評審的分析報告，做出最終裁定。
-
----
-
-## 設定與配置
-
-### 核心常數（`src/constants/config.ts`）
-
-```typescript
-DEFAULT_API_URL = 'https://openrouter.ai/api/v1'
-
-SUPPORTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
-SUPPORTED_TEXT_TYPES  = ['text/plain', 'text/markdown', 'text/csv', 'application/json']
-MAX_FILE_SIZE         = 20 * 1024 * 1024  // 20 MB
-
-MIN_ARENA_SLOTS    = 2
-MAX_ARENA_SLOTS    = 4
-MIN_DEBATE_ROUNDS  = 1
-MAX_DEBATE_ROUNDS  = 10
-DEFAULT_DEBATE_ROUNDS = 3
+```text
+頁面輸入
+   ├─ 模型競技場 ──> arena-runner ──> StreamingManager ──> 模型 × 重複次數的 OpenRouter streamChat
+  │                                      └─> 可選裁判 streamChat
+   ├─ 供應商比較 ──> provider-runner ──> StreamingManager ──> 每個 endpoint 一個 provider.only 請求
+   └─ AI 辯論 ────> debate-runner ────> DebateOrchestrator ─> 起始方正反回合 ─> 裁判團 ─> PDF
 ```
 
-### 主題色系
+所有串流都使用瀏覽器原生 `fetch`、`ReadableStream` 和 `AbortController`。取消時會中止請求；新一輪開始時會用執行編號擋住舊回應，避免污染新結果。
 
-主色為**綠色系**（`primary-500: #22c55e`），用於互動元素、焦點環、按鈕等。
+### 主要目錄
 
-辯論介面額外使用：
+```text
+src/
+├── components/
+│   ├── arena/          # 模型競技場
+│   ├── debate/         # AI 辯論
+│   ├── providers/      # 供應商比較
+│   ├── settings/       # API、模型、提示詞和紀錄設定
+│   ├── layout/         # 側邊欄與手機版主佈局
+│   └── shared/         # ModelSlot、DropZone、Markdown、串流與推理顯示
+├── services/           # OpenRouter、背景執行器、串流管理、辯論編排、PDF、附件處理
+├── stores/             # Zustand 狀態與 localStorage 保存
+├── types/              # API、模型、競技場、辯論和歷史型別
+└── constants/          # 上傳限制與預設提示詞
+```
 
-- 正方：藍色（`blue-500`）
-- 反方：紅色（`red-500`）
-
----
-
-## 開發指南
-
-### 本地開發
+## 開發指令
 
 ```bash
-npm run dev      # 啟動開發伺服器（熱重載）
-npm run build    # 型別檢查 + 生產建置
-npm run preview  # 預覽生產版本
+npm run dev      # 啟動開發伺服器
+npm run build    # TypeScript 檢查與 Vite 生產建置
+npm run preview  # 預覽 dist/
 ```
 
-### 新增模型支援
+提交前至少執行：
 
-OpenRouter 支援數百個模型，你只需在設定頁面的「模型清單」中新增模型 ID 即可使用。完整模型清單請參考：[openrouter.ai/models](https://openrouter.ai/models)
+```bash
+npm run build
+git diff --check
+```
 
-### 自訂裁判提示詞
+## 限制與安全提醒
 
-裁判 System Prompt 支援在介面上即時編輯，無需修改程式碼。若要更改預設值，請修改 `src/constants/default-prompts.ts`。
-
-### 技術限制
-
-- **CORS**：OpenRouter 支援從瀏覽器直接呼叫，無需後端代理
-- **API Key 安全性**：Key 儲存於 `localStorage`，僅適用於個人使用環境，請勿在公開服務上部署
-- **串流協定**：使用標準 SSE（Server-Sent Events），依賴瀏覽器原生 `fetch` + `ReadableStream`
-- **localStorage 容量**：圖片附件不儲存 base64 內容以節省空間；大量長文本對話可能接近瀏覽器限制（通常 5–10 MB）
-
----
-
-## 相關文件
-
-- [開發紀錄](Docs/DEVLOG.md) — 功能迭代歷程與技術決策記錄
+- API Key 存在瀏覽器 `localStorage`，不要在共用電腦或公開前端中使用私人 Key。
+- API 呼叫直接從瀏覽器送往 OpenRouter，實際可用模型、供應商和價格以 OpenRouter 當下回應為準。
+- 長篇回答、附件和歷史紀錄會受到瀏覽器 `localStorage` 容量限制。
+- 圖片是否能被模型理解，取決於所選模型和供應商是否支援視覺輸入。

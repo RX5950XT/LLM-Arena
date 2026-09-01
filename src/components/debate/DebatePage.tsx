@@ -2,21 +2,24 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useDebateStore } from '@/stores/debate-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useHistoryStore } from '@/stores/history-store'
-import { OpenRouterClient } from '@/services/openrouter-client'
-import { DebateOrchestrator } from '@/services/debate-orchestrator'
-import { generateTitle } from '@/services/title-generator'
+import { getDebateRunSnapshot, startDebateRun, stopDebateRun } from '@/services/debate-runner'
 import { ModelSlot } from '@/components/shared/ModelSlot'
 import { DropZone } from '@/components/shared/DropZone'
 import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer'
+import { ReasoningDisclosure } from '@/components/shared/ReasoningDisclosure'
 import { MIN_DEBATE_ROUNDS, MAX_DEBATE_ROUNDS } from '@/constants/config'
 import type { StoredAttachment } from '@/types/history'
+import type { Attachment } from '@/types/models'
+import { downloadDebatePdf } from '@/services/debate-pdf'
 
 const DEBATE_RECOVERY_KEY = 'debate-recovery-state'
 const RECOVERY_TTL_MS = 15 * 60 * 1000
 
 interface DebateRecoveryState {
+  historyId?: string
   topic: string
   totalRounds: number
+  startingSide?: 'for' | 'against'
   forModelId: string
   forSystemPrompt: string
   againstModelId: string
@@ -28,8 +31,12 @@ function saveDebateRecovery(state: DebateRecoveryState): void {
   try { localStorage.setItem(DEBATE_RECOVERY_KEY, JSON.stringify(state)) } catch { /* ignore */ }
 }
 
-function clearDebateRecovery(): void {
-  try { localStorage.removeItem(DEBATE_RECOVERY_KEY) } catch { /* ignore */ }
+function clearDebateRecovery(historyId?: string): void {
+  try {
+    const raw = localStorage.getItem(DEBATE_RECOVERY_KEY)
+    const saved = raw ? JSON.parse(raw) as { historyId?: string } : null
+    if (!saved?.historyId || saved.historyId === historyId) localStorage.removeItem(DEBATE_RECOVERY_KEY)
+  } catch { /* ignore */ }
 }
 
 function loadDebateRecovery(): DebateRecoveryState | null {
@@ -45,10 +52,22 @@ function loadDebateRecovery(): DebateRecoveryState | null {
   } catch { return null }
 }
 
+function getHistoryTitle(text: string): string {
+  return text.trim().slice(0, 40) || '未命名對話'
+}
+
+function toStoredAttachments(attachments: Attachment[]): StoredAttachment[] {
+  return attachments.map((attachment) => ({
+    ...attachment,
+    content: attachment.type === 'image' ? '' : attachment.content,
+    isImagePlaceholder: attachment.type === 'image'
+  })) as StoredAttachment[]
+}
+
 export function DebatePage(): JSX.Element {
   const store = useDebateStore()
   const { apiUrl, apiKey } = useSettingsStore()
-  const orchestratorRef = useRef<DebateOrchestrator | null>(null)
+  const activeDebateId = useHistoryStore((state) => state.activeDebateId)
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set())
   const [recoveryBanner, setRecoveryBanner] = useState(false)
   const recoveryAppliedRef = useRef(false)
@@ -61,10 +80,16 @@ export function DebatePage(): JSX.Element {
     if (store.messages.length > 0 || store.status !== 'idle') return
     store.setTopic(saved.topic)
     store.setTotalRounds(saved.totalRounds)
+    store.setStartingSide(saved.startingSide === 'against' ? 'against' : 'for')
     store.setForModel({ modelId: saved.forModelId, systemPrompt: saved.forSystemPrompt })
     store.setAgainstModel({ modelId: saved.againstModelId, systemPrompt: saved.againstSystemPrompt })
     setRecoveryBanner(true)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const snapshot = getDebateRunSnapshot(activeDebateId)
+    if (snapshot) useDebateStore.setState(snapshot)
+  }, [activeDebateId])
 
   const toggleMessage = useCallback((key: string) => {
     setCollapsedMessages((prev) => {
@@ -75,7 +100,8 @@ export function DebatePage(): JSX.Element {
     })
   }, [])
 
-  const handleStart = useCallback(async () => {
+  const handleStart = useCallback(() => {
+    if (store.status === 'debating' || store.status === 'judging') return
     if (!apiKey) {
       alert('請先在設定頁面輸入 API Key')
       return
@@ -91,62 +117,73 @@ export function DebatePage(): JSX.Element {
 
     setRecoveryBanner(false)
     setCollapsedMessages(new Set())
+    store.resetDebate()
+    const initialState = useDebateStore.getState()
+    const historyId = useHistoryStore.getState().saveDebate({
+      title: getHistoryTitle(initialState.topic),
+      topic: initialState.topic,
+      totalRounds: initialState.totalRounds,
+      startingSide: initialState.startingSide,
+      forModel: initialState.forModel,
+      againstModel: initialState.againstModel,
+      attachments: toStoredAttachments(initialState.attachments),
+      messages: [],
+      status: 'debating',
+      currentRound: 0,
+      currentSpeaker: null,
+      currentStreamText: '',
+      currentStreamReasoningText: '',
+      judges: initialState.judges.map((judge) => ({
+        name: judge.name,
+        modelId: judge.modelId,
+        systemPrompt: judge.systemPrompt,
+        analysis: '',
+        reasoningText: '',
+        isStreaming: false,
+        error: null
+      }))
+    })
     saveDebateRecovery({
-      topic: store.topic,
-      totalRounds: store.totalRounds,
-      forModelId: store.forModel.modelId,
-      forSystemPrompt: store.forModel.systemPrompt,
-      againstModelId: store.againstModel.modelId,
-      againstSystemPrompt: store.againstModel.systemPrompt,
+      historyId,
+      topic: initialState.topic,
+      totalRounds: initialState.totalRounds,
+      startingSide: initialState.startingSide,
+      forModelId: initialState.forModel.modelId,
+      forSystemPrompt: initialState.forModel.systemPrompt,
+      againstModelId: initialState.againstModel.modelId,
+      againstSystemPrompt: initialState.againstModel.systemPrompt,
       timestamp: Date.now()
     })
-    store.resetDebate()
-    const client = new OpenRouterClient(apiUrl, apiKey)
-    orchestratorRef.current = new DebateOrchestrator(client)
-    await orchestratorRef.current.startDebate()
-    clearDebateRecovery()
-
-    // 背景：生成標題並儲存歷史紀錄
-    void (async () => {
-      const finalState = useDebateStore.getState()
-      if (finalState.messages.length === 0) return
-      const settings = useSettingsStore.getState()
-      const title = await generateTitle(
-        settings.apiUrl,
-        settings.apiKey,
-        settings.titleModelId,
-        finalState.topic,
-        finalState.attachments
-      )
-      const storedAttachments: StoredAttachment[] = finalState.attachments.map((a) => ({
-        ...a,
-        content: a.type === 'image' ? '' : a.content,
-        isImagePlaceholder: a.type === 'image'
-      }))
-      useHistoryStore.getState().saveDebate({
-        title,
-        topic: finalState.topic,
-        totalRounds: finalState.totalRounds,
-        forModel: finalState.forModel,
-        againstModel: finalState.againstModel,
-        attachments: storedAttachments,
-        messages: finalState.messages,
-        judges: finalState.judges.map((j) => ({
-          name: j.name,
-          modelId: j.modelId,
-          systemPrompt: j.systemPrompt,
-          analysis: j.analysis
-        }))
-      })
-    })()
-  }, [store, apiUrl, apiKey])
+    startDebateRun(historyId, {
+      apiUrl,
+      apiKey,
+      state: initialState,
+      onCompleted: clearDebateRecovery
+    })
+  }, [apiKey, apiUrl, store])
 
   const handleStop = useCallback(() => {
-    orchestratorRef.current?.stop()
-  }, [])
+    stopDebateRun(activeDebateId)
+  }, [activeDebateId])
 
   const isActive = store.status === 'debating' || store.status === 'judging'
-  const hasDialogue = store.messages.length > 0 || store.currentStreamText
+  const hasDialogue = store.messages.length > 0 || store.currentStreamText || store.currentStreamReasoningText
+  const canExportPdf = store.messages.length > 0 && !isActive
+
+  const handleExportPdf = useCallback(() => {
+    if (!canExportPdf) return
+    void downloadDebatePdf({
+      topic: store.topic,
+      totalRounds: store.totalRounds,
+      startingSide: store.startingSide,
+      forModel: store.forModel,
+      againstModel: store.againstModel,
+      messages: store.messages,
+      judges: store.judges
+    }).catch((error: unknown) => {
+      alert(error instanceof Error ? error.message : String(error))
+    })
+  }, [canExportPdf, store])
 
   return (
     <div className="flex flex-col p-4 md:p-5 gap-4">
@@ -211,6 +248,7 @@ export function DebatePage(): JSX.Element {
             userInput={store.topic}
             onInputChange={store.setTopic}
             onSend={handleStart}
+            onStop={handleStop}
             isSending={isActive}
             placeholder="輸入辯論議題..."
           />
@@ -231,12 +269,25 @@ export function DebatePage(): JSX.Element {
             <span className="text-sm font-mono w-6 text-center text-slate-700 dark:text-slate-300">{store.totalRounds}</span>
           </div>
         </div>
+        <div className="shrink-0 space-y-1.5 pb-1">
+          <label htmlFor="debate-starting-side" className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-mono block">起始方</label>
+          <select
+            id="debate-starting-side"
+            value={store.startingSide}
+            onChange={(e) => store.setStartingSide(e.target.value === 'against' ? 'against' : 'for')}
+            disabled={isActive}
+            className="px-3 py-1.5 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-slate-700 dark:text-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <option value="for">正方先開始</option>
+            <option value="against">反方先開始</option>
+          </select>
+        </div>
       </div>
 
       {/* 控制列 */}
-      {isActive && (
+      {(isActive || canExportPdf) && (
         <div className="flex items-center gap-3">
-          <div className="text-sm text-slate-500 dark:text-slate-400">
+          <div className="flex-1 text-sm text-slate-500 dark:text-slate-400">
             {store.status === 'debating' && (
               <>
                 第 {store.currentRound}/{store.totalRounds} 回合
@@ -249,13 +300,18 @@ export function DebatePage(): JSX.Element {
             )}
             {store.status === 'judging' && '裁判評分中...'}
           </div>
-          <button
-            type="button"
-            onClick={handleStop}
-            className="px-3 py-1.5 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors cursor-pointer"
-          >
-            停止
-          </button>
+          {canExportPdf && (
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-primary-700 dark:text-primary-300 border border-primary-600 dark:border-primary-500 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-950/30 transition-colors cursor-pointer"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              導出 PDF
+            </button>
+          )}
         </div>
       )}
 
@@ -268,7 +324,7 @@ export function DebatePage(): JSX.Element {
               <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
               <span className="text-xs font-semibold text-blue-700 dark:text-blue-300 font-mono">正方</span>
               <span className="text-xs text-blue-400 dark:text-blue-600 truncate font-mono flex-1">{store.forModel.modelId}</span>
-              {store.currentSpeaker === 'for' && (
+              {store.status === 'debating' && store.currentSpeaker === 'for' && (
                 <svg className="animate-spin w-3 h-3 text-blue-500 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
@@ -295,23 +351,27 @@ export function DebatePage(): JSX.Element {
                       </button>
                       {!isCollapsed && (
                         <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 rounded-lg p-3">
+                          <ReasoningDisclosure content={msg.reasoningText ?? ''} />
                           <MarkdownRenderer content={msg.content} />
                         </div>
                       )}
                     </div>
                   )
                 })}
-              {store.currentSpeaker === 'for' && store.currentStreamText && (
+              {store.currentSpeaker === 'for' && (store.currentStreamText || store.currentStreamReasoningText) && (
                 <div className="space-y-1">
                   <div className="flex items-center gap-1.5 text-xs text-blue-400 dark:text-blue-600 font-mono">
-                    <svg className="animate-spin w-3 h-3 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
+                    {store.status === 'debating' && (
+                      <svg className="animate-spin w-3 h-3 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                    )}
                     第 {store.currentRound} 回合
                   </div>
                   <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 rounded-lg p-3">
-                    <MarkdownRenderer content={store.currentStreamText} />
+                    <ReasoningDisclosure content={store.currentStreamReasoningText} isStreaming />
+                    {store.currentStreamText && <MarkdownRenderer content={store.currentStreamText} />}
                   </div>
                 </div>
               )}
@@ -324,7 +384,7 @@ export function DebatePage(): JSX.Element {
               <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
               <span className="text-xs font-semibold text-red-700 dark:text-red-300 font-mono">反方</span>
               <span className="text-xs text-red-400 dark:text-red-600 truncate font-mono flex-1">{store.againstModel.modelId}</span>
-              {store.currentSpeaker === 'against' && (
+              {store.status === 'debating' && store.currentSpeaker === 'against' && (
                 <svg className="animate-spin w-3 h-3 text-red-500 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
@@ -351,23 +411,27 @@ export function DebatePage(): JSX.Element {
                       </button>
                       {!isCollapsed && (
                         <div className="bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40 rounded-lg p-3">
+                          <ReasoningDisclosure content={msg.reasoningText ?? ''} />
                           <MarkdownRenderer content={msg.content} />
                         </div>
                       )}
                     </div>
                   )
                 })}
-              {store.currentSpeaker === 'against' && store.currentStreamText && (
+              {store.currentSpeaker === 'against' && (store.currentStreamText || store.currentStreamReasoningText) && (
                 <div className="space-y-1">
                   <div className="flex items-center gap-1.5 text-xs text-red-400 dark:text-red-600 font-mono">
-                    <svg className="animate-spin w-3 h-3 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
+                    {store.status === 'debating' && (
+                      <svg className="animate-spin w-3 h-3 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                    )}
                     第 {store.currentRound} 回合
                   </div>
                   <div className="bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40 rounded-lg p-3">
-                    <MarkdownRenderer content={store.currentStreamText} />
+                    <ReasoningDisclosure content={store.currentStreamReasoningText} isStreaming />
+                    {store.currentStreamText && <MarkdownRenderer content={store.currentStreamText} />}
                   </div>
                 </div>
               )}
@@ -384,9 +448,9 @@ export function DebatePage(): JSX.Element {
           </svg>
           <span className="text-sm font-medium text-slate-700 dark:text-slate-300">裁判團（4 位）</span>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3">
           {store.judges.map((judge, index) => (
-            <div key={index} className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+            <div key={index} className={`border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden ${index === 3 ? 'md:col-span-3' : ''}`}>
               <div className="p-3">
                 <ModelSlot
                   label={judge.name}
@@ -396,9 +460,10 @@ export function DebatePage(): JSX.Element {
                   onSystemPromptChange={(v) => store.updateJudge(index, { systemPrompt: v })}
                 />
               </div>
-              {judge.analysis && (
+              {(judge.analysis || judge.reasoningText || judge.isStreaming) && (
                 <div className="border-t border-slate-200 dark:border-slate-800 p-3 bg-slate-50 dark:bg-slate-900/50 max-h-[300px] overflow-y-auto">
-                  <MarkdownRenderer content={judge.analysis} />
+                  <ReasoningDisclosure content={judge.reasoningText} isStreaming={judge.isStreaming} />
+                  {judge.analysis && <MarkdownRenderer content={judge.analysis} />}
                   {judge.isStreaming && (
                     <span className="inline-flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 mt-2">
                       <svg className="animate-spin w-3 h-3 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

@@ -9,6 +9,7 @@ interface DropZoneProps {
   userInput: string
   onInputChange: (value: string) => void
   onSend: () => void
+  onStop?: () => void
   isSending: boolean
   placeholder?: string
 }
@@ -53,6 +54,14 @@ function IconSend(): JSX.Element {
   )
 }
 
+function IconStop(): JSX.Element {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20" className="w-4 h-4">
+      <path d="M5.5 5.5A1.5 1.5 0 0 1 7 4h6a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13H7a1.5 1.5 0 0 1-1.5-1.5v-6Z" />
+    </svg>
+  )
+}
+
 export function DropZone({
   attachments,
   onAdd,
@@ -60,6 +69,7 @@ export function DropZone({
   userInput,
   onInputChange,
   onSend,
+  onStop,
   isSending,
   placeholder = '輸入問題，或拖入檔案/圖片...'
 }: DropZoneProps): JSX.Element {
@@ -159,6 +169,7 @@ export function DropZone({
 
       <div className="flex items-end gap-2 p-2.5">
         <button
+          type="button"
           onClick={() => fileInputRef.current?.click()}
           className="shrink-0 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
           title="附加檔案"
@@ -182,22 +193,36 @@ export function DropZone({
           rows={2}
           className="flex-1 px-2 py-1.5 text-sm bg-transparent outline-none resize-none text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-600"
         />
-        <button
-          onClick={onSend}
-          disabled={isSending || !userInput.trim()}
-          className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-primary-600 hover:bg-primary-500 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors cursor-pointer"
-          aria-label="發送"
-        >
-          {isSending ? (
-            <svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-          ) : (
-            <IconSend />
-          )}
-          <span>{isSending ? '生成中' : '發送'}</span>
-        </button>
+        {isSending && onStop ? (
+          <button
+            type="button"
+            onClick={onStop}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-medium rounded-lg transition-colors cursor-pointer"
+            aria-label="強制暫停"
+            title="立即停止目前生成，保留內容並可重新發送"
+          >
+            <IconStop />
+            <span>強制暫停</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onSend}
+            disabled={isSending || !userInput.trim()}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-primary-600 hover:bg-primary-500 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors cursor-pointer"
+            aria-label="發送"
+          >
+            {isSending ? (
+              <svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            ) : (
+              <IconSend />
+            )}
+            <span>{isSending ? '生成中' : '發送'}</span>
+          </button>
+        )}
       </div>
 
       {isDragging && (

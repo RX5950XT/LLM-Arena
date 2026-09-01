@@ -7,6 +7,7 @@ interface ModelSlotProps {
   modelId: string
   systemPrompt: string
   reasoning?: boolean
+  showPromptLibrary?: boolean
   onModelIdChange: (value: string) => void
   onSystemPromptChange: (value: string) => void
   onReasoningChange?: (value: boolean) => void
@@ -23,6 +24,7 @@ export function ModelSlot({
   modelId,
   systemPrompt,
   reasoning = false,
+  showPromptLibrary = false,
   onModelIdChange,
   onSystemPromptChange,
   onReasoningChange
@@ -31,12 +33,14 @@ export function ModelSlot({
   const [showDropdown, setShowDropdown] = useState(false)
   const [dropdownPos, setDropdownPos] = useState<DropdownPos>({ top: 0, left: 0, width: 0 })
   const modelList = useSettingsStore((s) => s.modelList)
+  const systemPrompts = useSettingsStore((s) => s.systemPrompts)
   const inputRef = useRef<HTMLInputElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   const filtered = modelId.trim()
     ? modelList.filter((m) => m.toLowerCase().includes(modelId.toLowerCase()))
     : modelList
+  const selectedPromptId = systemPrompts.find((prompt) => prompt.content === systemPrompt)?.id ?? ''
 
   const updatePosition = useCallback(() => {
     if (!inputRef.current) return
@@ -91,14 +95,18 @@ export function ModelSlot({
           {label}
         </span>
         <button
+          type="button"
           onClick={() => setShowPrompt(!showPrompt)}
+          aria-expanded={showPrompt}
           className="text-xs text-slate-400 hover:text-primary-500 dark:text-slate-500 dark:hover:text-primary-400 transition-colors cursor-pointer"
         >
           {showPrompt ? '隱藏提示詞' : '系統提示詞'}
         </button>
         {onReasoningChange && (
           <button
+            type="button"
             onClick={() => onReasoningChange(!reasoning)}
+            aria-pressed={reasoning}
             className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-md transition-colors cursor-pointer border ${
               reasoning
                 ? 'bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400'
@@ -151,14 +159,41 @@ export function ModelSlot({
         </div>,
         document.body
       )}
+      {showPromptLibrary && (
+        <div className="space-y-1">
+          <label className="text-[11px] text-slate-500 dark:text-slate-400">提示詞庫</label>
+          <select
+            aria-label={`${label}提示詞庫`}
+            value={selectedPromptId}
+            disabled={systemPrompts.length === 0}
+            onChange={(e) => {
+              const selected = systemPrompts.find((prompt) => prompt.id === e.target.value)
+              if (selected) onSystemPromptChange(selected.content)
+            }}
+            className="w-full px-3 py-1.5 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-slate-800 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <option value="">{systemPrompts.length > 0 ? '手動輸入' : '尚未儲存系統提示詞'}</option>
+            {systemPrompts.map((prompt) => (
+              <option key={prompt.id} value={prompt.id}>{prompt.name}</option>
+            ))}
+          </select>
+          {systemPrompts.length === 0 && (
+            <a href="#/settings" className="inline-block text-[11px] text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
+              前往設定匯入提示詞 →
+            </a>
+          )}
+        </div>
+      )}
       {showPrompt && (
-        <textarea
-          value={systemPrompt}
-          onChange={(e) => onSystemPromptChange(e.target.value)}
-          placeholder="系統提示詞（可選）"
-          rows={5}
-          className="w-full px-3 py-1.5 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all resize-y text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-600"
-        />
+        <div className="space-y-2">
+          <textarea
+            value={systemPrompt}
+            onChange={(e) => onSystemPromptChange(e.target.value)}
+            placeholder="系統提示詞（可選）"
+            rows={5}
+            className="w-full px-3 py-1.5 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all resize-y text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-600"
+          />
+        </div>
       )}
     </div>
   )
