@@ -5,8 +5,15 @@
 - [x] 檢查目前程式與 Git 變更，確認沒有明顯錯誤或敏感資料
 - [x] 清理已確認的產物／垃圾，補齊必要的 Git 排除規則
 - [x] 以一次 build 和一次 diff／狀態檢查驗收
-- [ ] 提交並推送到 `origin/main`
-- [ ] 查看部署狀態並記錄結果
+- [x] 提交並推送到 `origin/main`
+- [x] 查看部署狀態並記錄結果
+
+## 本次需求回顧
+
+- 檢查 staged 清單與密鑰掃描，未提交 `dist`、`node_modules`、`.vercel`、`.vscode` 或測試輸出；移除追蹤中的 `tsconfig.tsbuildinfo`，並補上產物排除規則。
+- `npm run build` 通過，exit code `0`；`git diff --cached --check` 通過。
+- commit `68f6630` 已推送至 `origin/main`；Vercel Production 部署 `https://llm-arena-dr85og7mq-rx5950xts-projects.vercel.app` 狀態為 `Ready`。
+- 保留既有 Browserslist 資料過期與 bundle 超過 500 kB 的非阻塞警告，這次不為警告擴大修改範圍。
 
 ## 本次需求：切換對話後仍在背景完成
 
