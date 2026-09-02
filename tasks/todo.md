@@ -1,5 +1,17 @@
 # 工作計畫
 
+## 本次需求：新增 LLM Arena 品牌 logo
+
+- [x] 產生適合 favicon 與 20–24px header 的簡潔幾何 logo
+- [x] 將 logo 接到 Sidebar、手機版 Header 與 `index.html` favicon
+- [x] 執行 build 與瀏覽器資產讀取驗證
+
+## 本次需求回顧
+
+- 使用 `imagegen` 產生透明背景的幾何 logo，複用於桌面 Sidebar、手機版 Header 與 favicon。
+- `npm run build` 通過（exit code `0`）；`git diff --check` 通過。
+- Playwright 桌面／手機截圖可見 logo；兩個圖片元素均載入完成（natural size `1254×1254`），favicon URL 為 `/llm-arena-logo.png`。
+
 # 本次需求：程式檢查、清理、提交與部署
 
 - [x] 檢查目前程式與 Git 變更，確認沒有明顯錯誤或敏感資料
