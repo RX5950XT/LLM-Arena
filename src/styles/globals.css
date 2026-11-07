@@ -195,7 +195,7 @@
     }
 
     .segment {
-      min-width: 2.5rem;
+      min-width: 2.25rem;
     }
 
     /* 有些按鈕為了版面刻意做小；可點範圍撐到 44px，畫面大小不變。overflow hidden 的元素撐不開 */
