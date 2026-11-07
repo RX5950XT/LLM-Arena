@@ -60,7 +60,7 @@ src/
 - `lineup-memory`：送出時記住競技場與辯論陣容；`resetAll`／`reset`（新對話）只清問題與回覆，保留陣容
 - `score-parser`：從裁判 Markdown 讀分數；只信任明確的表格或分數句，讀不出來就回傳空值、畫面只顯示原文，不猜分數
 - `MarkdownRenderer` 把模型回應當不可信內容：`rehype-raw` 之後一定接 `rehype-sanitize`，白名單不放行 `class`、`style` 和圖片來源；公式先換成 `data-tex` 標記，過濾完才由 KaTeX 畫出來，所以不要為了公式放寬白名單
-- `debate-pdf` 以 `plain` 模式呼叫 `MarkdownRenderer`（無複製按鈕、無 `.md` 樣式、無程式碼上色），PDF 排版只由 `PDF_CSS` 負責
+- `debate-pdf` 以 `plain` 模式呼叫 `MarkdownRenderer`（無複製按鈕、無 `.md` 樣式、無程式碼上色），PDF 排版只由 `PDF_CSS` 負責；在隔離 iframe 量高度後整份內容切成多頁，切點落在兩行之間，長回應不會被截掉；每頁用 `XMLSerializer` 轉成合法 XML 再放進 SVG
 - Portal 渲染：ModelSlot 下拉清單使用 `createPortal` 避免 overflow 裁切
 - 中斷恢復：發送前將設定儲存於 localStorage（TTL 15 分鐘），重新整理後自動恢復並提示重新生成；強制暫停後保留輸入，可重新發送
 

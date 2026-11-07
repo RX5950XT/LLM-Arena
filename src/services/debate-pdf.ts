@@ -21,16 +21,38 @@ interface PdfImage {
   height: number
 }
 
+interface Band {
+  top: number
+  bottom: number
+}
+
+interface MeasuredSection extends Band {
+  xml: string
+}
+
+interface PageSlice {
+  start: number
+  end: number
+}
+
 const PAGE_WIDTH = 595
 const PAGE_HEIGHT = 842
 const PAGE_CSS_WIDTH = 794
 const PAGE_CSS_HEIGHT = 1123
 const PAGE_CONTENT_HEIGHT = 1000
 const RENDER_SCALE = 2
+/** 標題至少要和下一行留在同一頁 */
+const KEEP_WITH_NEXT = 40
+/** XML 不接受這些字元；帶 u 旗標時 [\uD800-\uDFFF] 只會比對到落單的代理字元 */
+const INVALID_XML_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF\uD800-\uDFFF]/gu
+/** 不跟頁面的字型相依，量高度與輸出成圖片時用的字型才會一樣 */
+const KATEX_CSS_WITHOUT_FONTS = katexCss.replace(/@font-face\s*\{[^}]*\}/g, '')
 
 const PDF_CSS = `
-${katexCss}
+${KATEX_CSS_WITHOUT_FONTS}
 * { box-sizing: border-box; }
+[data-pdf-flow] { display: flow-root; }
+.pdf-slice { overflow: hidden; }
 .pdf-page {
   position: relative;
   width: ${PAGE_CSS_WIDTH}px;
@@ -119,31 +141,82 @@ function buildSections(data: DebatePdfData): string[] {
   return sections
 }
 
-function paginateSections(sections: string[]): string[][] {
-  const host = document.createElement('div')
-  host.style.cssText = 'position:absolute;left:-100000px;top:0;width:794px;visibility:hidden;'
-  host.innerHTML = `<style>${PDF_CSS}</style><div class="pdf-page pdf-measure-page">${sections.map((section, index) => `<div data-pdf-flow="${index}">${section}</div>`).join('')}</div>`
-  document.body.appendChild(host)
+/** 找出所有不能被切開的範圍：每一行文字、表格列、公式，標題則連同下一行。 */
+function collectBands(flow: HTMLElement, originTop: number): Band[] {
+  const doc = flow.ownerDocument
+  const bands: Band[] = []
+  const add = (rect: { top: number; bottom: number; width: number; height: number }, extra = 0): void => {
+    if (rect.width > 0 && rect.height > 0) bands.push({ top: rect.top - originTop, bottom: rect.bottom - originTop + extra })
+  }
+
+  const walker = doc.createTreeWalker(flow, NodeFilter.SHOW_TEXT)
+  const range = doc.createRange()
+  while (walker.nextNode()) {
+    const node = walker.currentNode
+    if (node.parentElement?.closest('.katex, tr')) continue
+    range.selectNodeContents(node)
+    Array.from(range.getClientRects()).forEach((rect) => add(rect))
+  }
+  flow.querySelectorAll('.katex, .katex-display, tr, hr, input').forEach((element) => add(element.getBoundingClientRect()))
+  flow.querySelectorAll('h1, h2, h3, h4, h5, h6, .pdf-model').forEach((element) => add(element.getBoundingClientRect(), KEEP_WITH_NEXT))
+
+  const merged: Band[] = []
+  for (const band of [...bands].sort((left, right) => left.top - right.top)) {
+    const last = merged[merged.length - 1]
+    if (last && band.top < last.bottom) last.bottom = Math.max(last.bottom, band.bottom)
+    else merged.push({ ...band })
+  }
+  return merged
+}
+
+/** 從上往下切頁，切點一定落在兩行之間；只有比一整頁還高的東西才不得不切開。 */
+function slicePages(bands: Band[]): PageSlice[] {
+  const slices: PageSlice[] = []
+  let start = bands[0]?.top ?? 0
+  for (;;) {
+    const limit = start + PAGE_CONTENT_HEIGHT
+    const crossing = bands.find((band) => band.top < limit && band.bottom > limit)
+    const end = crossing && crossing.top > start ? crossing.top : limit
+    const next = bands.find((band) => band.bottom > end)
+    if (!next) {
+      slices.push({ start, end: Math.max(end, start) })
+      return slices
+    }
+    slices.push({ start, end })
+    start = Math.max(end, next.top)
+  }
+}
+
+/**
+ * 在隔離的 iframe 裡排版。外層頁面有 Tailwind 的樣式重設，輸出的圖片沒有，
+ * 在外層量到的高度會和實際輸出不同，切點就會落在字上。
+ */
+function measureSections(sections: string[]): { sections: MeasuredSection[]; slices: PageSlice[] } {
+  const frame = document.createElement('iframe')
+  frame.setAttribute('aria-hidden', 'true')
+  frame.style.cssText = `position:absolute;left:-100000px;top:0;width:${PAGE_CSS_WIDTH}px;height:${PAGE_CSS_HEIGHT}px;border:0;visibility:hidden;`
+  document.body.appendChild(frame)
 
   try {
-    const items = Array.from(host.querySelectorAll<HTMLElement>('[data-pdf-flow]'))
-    const pages: string[][] = []
-    let page: string[] = []
-    let height = 0
-    for (const item of items) {
-      const itemHeight = item.getBoundingClientRect().height
-      if (page.length > 0 && height + itemHeight > PAGE_CONTENT_HEIGHT) {
-        pages.push(page)
-        page = []
-        height = 0
-      }
-      page.push(item.innerHTML)
-      height += itemHeight
-    }
-    if (page.length > 0) pages.push(page)
-    return pages.length > 0 ? pages : [['<p class="pdf-empty">（沒有內容）</p>']]
+    const doc = frame.contentDocument
+    if (!doc) throw new Error('無法建立 PDF 排版區')
+    const body = sections.map((section) => `<div data-pdf-flow>${section}</div>`).join('')
+    doc.open()
+    doc.write(`<!doctype html><html><head><meta charset="utf-8"><style>${PDF_CSS}</style></head><body style="margin:0"><div class="pdf-page pdf-measure-page"><div class="pdf-flow">${body}</div></div></body></html>`)
+    doc.close()
+
+    const flow = doc.querySelector<HTMLElement>('.pdf-flow')
+    if (!flow) throw new Error('無法建立 PDF 排版區')
+    const originTop = flow.getBoundingClientRect().top
+    const serializer = new XMLSerializer()
+    const measured = Array.from(flow.querySelectorAll<HTMLElement>('[data-pdf-flow]')).map((element) => {
+      const rect = element.getBoundingClientRect()
+      // innerHTML 產生的是 HTML（<br>、&nbsp;），放進 SVG 要合法的 XML，否則整頁載入失敗
+      return { top: rect.top - originTop, bottom: rect.bottom - originTop, xml: serializer.serializeToString(element).replace(INVALID_XML_CHARS, '') }
+    })
+    return { sections: measured, slices: slicePages(collectBands(flow, originTop)) }
   } finally {
-    host.remove()
+    frame.remove()
   }
 }
 
@@ -161,6 +234,13 @@ function loadImage(source: string): Promise<HTMLImageElement> {
     image.onerror = () => reject(new Error('無法將 Markdown 頁面轉成 PDF'))
     image.src = source
   })
+}
+
+/** 只放這一頁碰得到的段落，長辯論才不會每頁都帶著整份內容。 */
+function sliceMarkup(sections: MeasuredSection[], { start, end }: PageSlice): string {
+  const visible = sections.filter((section) => section.top < end && section.bottom > start)
+  const shift = (visible[0]?.top ?? start) - start
+  return `<div class="pdf-slice" style="height:${end - start}px"><div class="pdf-flow" style="transform:translateY(${shift}px)">${visible.map((section) => section.xml).join('')}</div></div>`
 }
 
 async function renderPage(content: string, pageNumber: number, pageCount: number): Promise<PdfImage> {
@@ -248,8 +328,12 @@ function serializePdf(pages: PdfImage[]): Uint8Array {
 export async function createDebatePdf(data: DebatePdfData): Promise<Blob> {
   if (typeof document === 'undefined') throw new Error('PDF 匯出需要瀏覽器環境')
   await document.fonts?.ready
-  const pages = paginateSections(buildSections(data))
-  const images = await Promise.all(pages.map((page, index) => renderPage(page.join(''), index + 1, pages.length)))
+  const { sections, slices } = measureSections(buildSections(data))
+  const images: PdfImage[] = []
+  // 一次一頁：頁數多時同時解碼整批圖片很吃記憶體
+  for (const [index, slice] of slices.entries()) {
+    images.push(await renderPage(sliceMarkup(sections, slice), index + 1, slices.length))
+  }
   return new Blob([serializePdf(images)], { type: 'application/pdf' })
 }
 
