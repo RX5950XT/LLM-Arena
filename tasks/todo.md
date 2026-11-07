@@ -184,3 +184,11 @@
 - [x] 內容有 `---`、`<br>`、任務清單或 `&nbsp;` 時匯出失敗：`innerHTML` 不是合法 XML，改用 `XMLSerializer`
 - [x] 超過一頁的回應被截掉（既有問題，修的時候才發現）：改為整份排版後在行與行之間切頁
 - [x] 驗證：10 種內容都能匯出；長內容從 4 頁變 17 頁，跨頁的段落、清單、表格與程式碼都接得上
+
+## 本次需求：升級有漏洞的套件、解除 PDF 的限制
+
+- [x] `npm audit` 0 個漏洞：升級 react-router-dom 7、katex 0.19、vite 7，移除未使用的 rehype-katex、remark-math
+- [x] PDF 文字可搜尋、選取（隱形文字層，MuPDF、PDFium、Poppler 都讀得到）
+- [x] PDF 公式用 KaTeX 正式字型；表格續頁重複表頭；過寬公式換行或縮小；超高表格列可跨頁；摺疊內容展開
+- [x] 每頁選無損或 JPEG 中較小者，長內容檔案約減半
+- [x] Chromium、Firefox、WebKit 都實測匯出；未測：實體 iOS Safari、Acrobat
