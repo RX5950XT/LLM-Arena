@@ -20,6 +20,7 @@ LLM 模型評比與辯論平台。用戶可以並行比較多個 LLM 的回應�
 npm run dev      # 啟動開發伺服器（http://localhost:5173）
 npm run build    # 生產建置（tsc -b && vite build）
 npm run preview  # 預覽生產版本
+npm test         # 公式解析與 HTML 過濾的測試（vitest）
 ```
 
 ## 目錄結構
@@ -62,6 +63,9 @@ src/
 - `MarkdownRenderer` 把模型回應當不可信內容：`rehype-raw` 之後一定接 `rehype-sanitize`，白名單不放行 `class`、`style` 和圖片來源；公式先換成 `data-tex` 標記，過濾完才由 KaTeX 畫出來，所以不要為了公式放寬白名單
 - `debate-pdf` 以 `plain` 模式呼叫 `MarkdownRenderer`（無複製按鈕、無 `.md` 樣式、無程式碼上色），PDF 排版只由 `PDF_CSS` 負責；在隔離 iframe 量高度後整份內容切成多頁，切點落在兩行之間，長回應不會被截掉；每頁用 `XMLSerializer` 轉成合法 XML 再放進 SVG；表格續頁重複表頭，KaTeX 字型內嵌，太寬的公式換行或縮小
 - `pdf-writer`：每頁圖片上疊隱形文字層，可搜尋與複製；每個詞一段，不要拆到每字一段，所有字碼對到同一個正常大小的字形，否則 PDFium（Chrome 內建閱讀器）會把文字當重複丟掉。圖片每頁比較無損與 JPEG，選小的
+- `math-markers`：公式標記只處理程式碼以外的文字，程式碼位置由 Markdown 解析器判斷；`$` 配對規則會排除金額（`$5 和 $10`、`$5-$10`）
+- `LazyMarkdown`：畫面一律用它顯示 Markdown，要顯示時才載入排版程式，抓不到就退回純文字；PDF 程式也是按下匯出才載入
+- `storage-status`：歷史與設定都經過 `writeToStorage` 寫入，存不進去時由 `StorageBanner` 提示，不要再直接呼叫 `localStorage.setItem`
 - Portal 渲染：ModelSlot 下拉清單使用 `createPortal` 避免 overflow 裁切
 - 中斷恢復：發送前將設定儲存於 localStorage（TTL 15 分鐘），重新整理後自動恢復並提示重新生成；強制暫停後保留輸入，可重新發送
 
@@ -90,6 +94,7 @@ src/
 ## 注意事項
 
 - API Key 儲存於 localStorage，不上傳後端
+- CSP 設在 `vercel.json`：禁止內嵌與外部程式、外部圖片。頁面不能再加內嵌 `<script>`（主題初始化在 `public/theme-init.js`）；對外連線要開放 https，因為 API URL 可以自訂
 - 使用 HashRouter（`/#/路徑`），適合靜態部署（Vercel、GitHub Pages）
 - StreamingText 每 120ms 節流更新 Markdown 渲染以提升效能
 - 中斷恢復 key：`arena-recovery-state`、`debate-recovery-state`（localStorage）

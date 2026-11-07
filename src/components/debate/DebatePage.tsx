@@ -4,7 +4,6 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { useHistoryStore } from '@/stores/history-store'
 import { getDebateRunSnapshot, startDebateRun, stopDebateRun } from '@/services/debate-runner'
 import { loadDebateLineup, saveDebateLineup } from '@/services/lineup-memory'
-import { downloadDebatePdf } from '@/services/debate-pdf'
 import { MIN_DEBATE_ROUNDS, MAX_DEBATE_ROUNDS } from '@/constants/config'
 import { ApiKeyBanner, ModelName, RangeField, RecoveryBanner, Segmented } from '@/components/shared/controls'
 import { DropZone } from '@/components/shared/DropZone'
@@ -353,18 +352,25 @@ export function DebatePage(): JSX.Element {
   const handleExportPdf = useCallback(() => {
     if (!canExportPdf) return
     setExportError(null)
-    void downloadDebatePdf({
-      topic: store.topic,
-      totalRounds: store.totalRounds,
-      startingSide: store.startingSide,
-      forModel: store.forModel,
-      againstModel: store.againstModel,
-      messages: store.messages,
-      judges: store.judges
-    }).catch((error: unknown) => {
-      console.error('PDF 匯出失敗', error)
-      setExportError(error instanceof Error ? `PDF 匯出失敗：${error.message}` : 'PDF 匯出失敗，請再試一次。')
-    })
+    // PDF 程式很大又不常用，按下匯出才載入
+    import('@/services/debate-pdf')
+      .catch((error: unknown) => {
+        console.error('PDF 程式載入失敗', error)
+        throw new Error('程式載入不到，請重新整理頁面再試一次。')
+      })
+      .then(({ downloadDebatePdf }) => downloadDebatePdf({
+        topic: store.topic,
+        totalRounds: store.totalRounds,
+        startingSide: store.startingSide,
+        forModel: store.forModel,
+        againstModel: store.againstModel,
+        messages: store.messages,
+        judges: store.judges
+      }))
+      .catch((error: unknown) => {
+        console.error('PDF 匯出失敗', error)
+        setExportError(error instanceof Error ? `PDF 匯出失敗：${error.message}` : 'PDF 匯出失敗，請再試一次。')
+      })
   }, [canExportPdf, store])
 
   return (

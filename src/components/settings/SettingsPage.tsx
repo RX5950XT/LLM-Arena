@@ -165,9 +165,12 @@ export function SettingsPage(): JSX.Element {
           setImportError('這不是 LLM Arena 匯出的紀錄檔，請重新選擇。')
           return
         }
-        historyStore.importHistory(data)
-        setImportError(null)
-        showSaved()
+        if (historyStore.importHistory(data)) {
+          setImportError(null)
+          showSaved()
+        } else {
+          setImportError('瀏覽器儲存空間不夠，匯入的紀錄重新整理後會消失。請先刪掉一些舊對話再匯入一次。')
+        }
       } catch {
         setImportError('檔案不是有效的 JSON，請重新選擇。')
       }

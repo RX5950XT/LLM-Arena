@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { writeToStorage } from './storage-status'
 import type {
   ArenaHistoryEntry,
   DebateHistoryEntry,
@@ -25,12 +26,8 @@ function loadFromStorage<T>(key: string): T[] {
   }
 }
 
-function saveToStorage<T>(key: string, data: T[]): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(data))
-  } catch {
-    // localStorage 空間不足時靜默失敗
-  }
+function saveToStorage<T>(key: string, data: T[]): boolean {
+  return writeToStorage('history', key, JSON.stringify(data))
 }
 
 function pruneToMax<T extends { updatedAt: number }>(arr: T[]): T[] {
@@ -61,7 +58,8 @@ interface HistoryActions {
   deleteProvider: (id: string) => void
   setActiveProviderId: (id: string | null) => void
   exportHistory: () => HistoryExport
-  importHistory: (data: HistoryExport) => void
+  /** 回傳 false 表示資料存不進瀏覽器，只留在目前分頁 */
+  importHistory: (data: HistoryExport) => boolean
 }
 
 export const useHistoryStore = create<HistoryState & HistoryActions>((set, get) => ({
@@ -229,7 +227,7 @@ export const useHistoryStore = create<HistoryState & HistoryActions>((set, get) 
   }),
 
   importHistory: (data) => {
-    if (data.version !== 1) return
+    if (data.version !== 1) return false
     const { arenaHistory, debateHistory } = get()
 
     const existingArenaIds = new Set(arenaHistory.map((e) => e.id))
@@ -244,9 +242,12 @@ export const useHistoryStore = create<HistoryState & HistoryActions>((set, get) 
     const newProviders = (data.providers ?? []).filter((e) => !existingProviderIds.has(e.id))
     const mergedProviders = pruneToMax([...get().providerHistory, ...newProviders])
 
-    saveToStorage(ARENA_KEY, mergedArena)
-    saveToStorage(DEBATE_KEY, mergedDebate)
-    saveToStorage(PROVIDER_KEY, mergedProviders)
+    const saved = [
+      saveToStorage(ARENA_KEY, mergedArena),
+      saveToStorage(DEBATE_KEY, mergedDebate),
+      saveToStorage(PROVIDER_KEY, mergedProviders)
+    ].every(Boolean)
     set({ arenaHistory: mergedArena, debateHistory: mergedDebate, providerHistory: mergedProviders })
+    return saved
   }
 }))

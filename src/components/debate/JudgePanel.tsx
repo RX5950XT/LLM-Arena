@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useDebateStore } from '@/stores/debate-store'
 import { ModelName } from '@/components/shared/controls'
 import { Icon, Spinner } from '@/components/shared/icons'
-import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer'
+import { LazyMarkdown } from '@/components/shared/LazyMarkdown'
 import { ReasoningDisclosure } from '@/components/shared/ReasoningDisclosure'
 import { parseDebateScore } from '@/services/score-parser'
 import type { DebateScore } from '@/services/score-parser'
@@ -78,7 +78,7 @@ function JudgeCard({ judge, score, isFinal }: { judge: JudgeResult; score: Debat
       </header>
       <div className={`px-3 pb-3 pt-2 ${isFinal ? '' : 'max-h-80 overflow-y-auto'}`}>
         <ReasoningDisclosure content={judge.reasoningText} isStreaming={judge.isStreaming} />
-        {judge.analysis && <MarkdownRenderer content={judge.analysis} />}
+        {judge.analysis && <LazyMarkdown content={judge.analysis} />}
         {judge.error && <p role="alert" className="text-[13px] text-danger">{judge.error}</p>}
         {judge.isStreaming && !judge.analysis && !judge.reasoningText && (
           <div className="space-y-2 py-1" aria-hidden="true">

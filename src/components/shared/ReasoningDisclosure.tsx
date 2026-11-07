@@ -1,5 +1,5 @@
 import { Icon } from './icons'
-import { MarkdownRenderer } from './MarkdownRenderer'
+import { LazyMarkdown } from './LazyMarkdown'
 
 interface ReasoningDisclosureProps {
   content: string
@@ -19,7 +19,7 @@ export function ReasoningDisclosure({ content, isStreaming = false }: ReasoningD
         </span>
       </summary>
       <div className="px-3 pb-3 pt-1 text-muted">
-        <MarkdownRenderer content={content} />
+        <LazyMarkdown content={content} />
       </div>
     </details>
   )

@@ -7,6 +7,7 @@ import rehypeHighlight from 'rehype-highlight'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import { CopyButton } from './controls'
+import { markMath } from './math-markers'
 
 interface MarkdownRendererProps {
   content: string
@@ -35,76 +36,6 @@ function CodeBlock({ children }: { children?: React.ReactNode }): JSX.Element {
       <pre>{children}</pre>
     </div>
   )
-}
-
-/**
- * Strip dollar signs from inside \text{...} blocks.
- * Some models (e.g. Grok) erroneously place $ inside \text{},
- * which breaks delimiter matching.
- */
-function fixTextBlocks(text: string): string {
-  return text.replace(/\\text\{([^}]*)\}/g, (match, inner: string) => {
-    const cleaned = inner.replace(/\$/g, '')
-    return cleaned !== inner ? `\\text{${cleaned}}` : match
-  })
-}
-
-/**
- * Join lines where an inline $...$ math expression was split across a line break.
- * remark-math / our regex does NOT allow newlines inside inline $...$,
- * so we merge continuation lines.
- */
-function joinSplitInlineMath(text: string): string {
-  const lines = text.split('\n')
-  const out: string[] = []
-  let i = 0
-  while (i < lines.length) {
-    let line = lines[i]
-    i++
-    while (i < lines.length) {
-      const singleDollars = line.replace(/\$\$/g, '').split('$').length - 1
-      if (singleDollars % 2 === 0) break
-      line = line + ' ' + lines[i]
-      i++
-    }
-    out.push(line)
-  }
-  return out.join('\n')
-}
-
-function mathMarker(tex: string, display: boolean): string {
-  return `<span data-tex="${encodeURIComponent(tex.trim())}"${display ? ' data-tex-display="true"' : ''}></span>`
-}
-
-/**
- * 把公式換成只帶原始碼的標記，等模型內容過濾完才由 MathOrSpan 畫出來。
- * KaTeX 的輸出需要 class 和 style，若跟模型內容一起過濾就得放行這兩個屬性，等於讓模型能蓋住畫面。
- */
-function markMath(text: string): string {
-  // 1. Normalize LaTeX delimiters
-  let result = text
-    .replace(/\\\[([^]*?)\\\]/g, (_, inner) => `$$${inner}$$`)
-    .replace(/\\\(([^]*?)\\\)/g, (_, inner) => `$${inner}$`)
-
-  // 2. Fix LaTeX compatibility issues
-  result = result
-    .replace(/\{\\rm\s+([^}]+)\}/g, '\\mathrm{$1}')
-    .replace(/\\rm\s+([a-zA-Z][a-zA-Z0-9./]*)/g, '\\mathrm{$1}')
-
-  // 3. Fix dollar signs inside \text{} blocks
-  result = fixTextBlocks(result)
-
-  // 4. Join inline math split across lines
-  result = joinSplitInlineMath(result)
-
-  // 5. Mark display math first ($$...$$)
-  result = result.replace(/\$\$([\s\S]*?)\$\$/g, (_, inner: string) => mathMarker(inner, true))
-
-  // 6. Mark inline math ($...$)
-  //    Match $...$ where inner content has no newline and no unescaped $
-  result = result.replace(/\$([^\n$]+?)\$/g, (_, inner: string) => mathMarker(inner, false))
-
-  return result
 }
 
 function decodeTex(encoded: string): string | null {

@@ -10,16 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;600&display=swap" />
     <title>LLM Arena - 大型語言模型競技場</title>
-    <script>
-      // 在畫面出現前決定主題，避免淺色使用者每次重新整理都閃一下深色
-      try {
-        var saved = localStorage.getItem('llm-arena-theme')
-        var dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
-        document.documentElement.classList.toggle('dark', dark)
-      } catch (e) {
-        document.documentElement.classList.add('dark')
-      }
-    </script>
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

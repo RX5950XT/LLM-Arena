@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { DEFAULT_API_URL } from '@/constants/config'
+import { writeToStorage } from './storage-status'
 import type { SystemPrompt } from '@/types/models'
 
 const STORAGE_KEY = 'llm-arena-settings'
@@ -50,7 +51,7 @@ interface SettingsState {
 }
 
 function persistSettings(state: { apiUrl: string; apiKey: string; modelList: string[]; systemPrompts: SystemPrompt[]; titleModelId: string }): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+  writeToStorage('settings', STORAGE_KEY, JSON.stringify({
     apiUrl: state.apiUrl,
     apiKey: state.apiKey,
     modelList: state.modelList,

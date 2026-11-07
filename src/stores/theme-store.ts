@@ -2,6 +2,14 @@ import { create } from 'zustand'
 
 const THEME_KEY = 'llm-arena-theme'
 
+function saveTheme(theme: 'dark' | 'light'): void {
+  try {
+    localStorage.setItem(THEME_KEY, theme)
+  } catch (error) {
+    console.warn('主題偏好儲存失敗', error)
+  }
+}
+
 interface ThemeState {
   theme: 'dark' | 'light'
   setTheme: (theme: 'dark' | 'light') => void
@@ -13,13 +21,13 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   setTheme: (theme) => {
     set({ theme })
     applyTheme(theme)
-    localStorage.setItem(THEME_KEY, theme)
+    saveTheme(theme)
   },
   toggleTheme: () => {
     const newTheme = get().theme === 'dark' ? 'light' : 'dark'
     set({ theme: newTheme })
     applyTheme(newTheme)
-    localStorage.setItem(THEME_KEY, newTheme)
+    saveTheme(newTheme)
   }
 }))
 

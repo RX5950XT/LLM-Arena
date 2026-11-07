@@ -5,6 +5,7 @@ import { ArenaPage } from '@/components/arena/ArenaPage'
 import { ProviderComparisonPage } from '@/components/providers/ProviderComparisonPage'
 import { DebatePage } from '@/components/debate/DebatePage'
 import { SettingsPage } from '@/components/settings/SettingsPage'
+import { preloadMarkdown } from '@/components/shared/LazyMarkdown'
 import { initTheme } from '@/stores/theme-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useHistoryStore } from '@/stores/history-store'
@@ -14,6 +15,7 @@ export function App(): JSX.Element {
     initTheme()
     useSettingsStore.getState().loadSettings()
     useHistoryStore.getState().loadHistory()
+    preloadMarkdown()
   }, [])
 
   return (

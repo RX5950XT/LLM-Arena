@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Icon } from '@/components/shared/icons'
 import { Sidebar } from './Sidebar'
+import { StorageBanner } from './StorageBanner'
 
 const COLLAPSED_KEY = 'llm-arena-sidebar-collapsed'
 
@@ -52,6 +53,8 @@ export function MainLayout(): JSX.Element {
           <img src="/llm-arena-mark.png" alt="" aria-hidden="true" className="h-6 w-6 shrink-0 rounded-md bg-white object-contain p-0.5" />
           <span className="text-sm font-semibold">LLM Arena</span>
         </div>
+
+        <StorageBanner />
 
         <div className="flex-1 overflow-y-auto">
           <Outlet />

@@ -27,7 +27,11 @@
 - API Key 在 `localStorage`，所以模型回應一律視為不可信內容。曾實測 `<iframe srcdoc>` 內的程式讀得到金鑰，修法與規則見 `MarkdownRenderer.tsx` 的 `SANITIZE_SCHEMA`。
 - 上色（`rehype-highlight`）要排在過濾之後，否則 class 會被清掉。
 
+- CSP 在 `vercel.json`，是過濾之外的第二層；開發伺服器不會套用，要驗證請用 production build 並帶上同樣的 header。Playwright 的 `wait_for_function` 字串寫法會被 CSP 擋下，屬測試工具限制。
+
 ## 驗證
+
+- `npm test` 涵蓋公式解析與 HTML 過濾；刻意拿掉過濾或程式碼判斷，測試會失敗。
 
 - `npm run build` 已通過（TypeScript 檢查與 Vite production build）。
 - `git diff --check` 已通過。

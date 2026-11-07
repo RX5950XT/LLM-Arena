@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { CopyButton } from './controls'
 import { Icon } from './icons'
-import { MarkdownRenderer } from './MarkdownRenderer'
+import { LazyMarkdown } from './LazyMarkdown'
 import { ReasoningDisclosure } from './ReasoningDisclosure'
 
 const THROTTLE_MS = 120
@@ -184,7 +184,7 @@ export function StreamingText({ text, reasoningText = '', isStreaming, error }: 
       {error && (
         <div role="alert" className="mb-3 rounded-lg bg-danger/10 px-3 py-2 text-[13px] leading-relaxed text-danger">{toFriendlyError(error)}</div>
       )}
-      {text && <MarkdownRenderer content={throttled} />}
+      {text && <LazyMarkdown content={throttled} />}
       {!hasOutput && isStreaming && <WaitingLines />}
       {!hasOutput && !isStreaming && !error && <p className="text-[13px] text-faint">沒有回應</p>}
     </div>

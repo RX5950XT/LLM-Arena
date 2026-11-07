@@ -1,6 +1,6 @@
 import { ModelName } from '@/components/shared/controls'
 import { Icon, Spinner } from '@/components/shared/icons'
-import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer'
+import { LazyMarkdown } from '@/components/shared/LazyMarkdown'
 import { ReasoningDisclosure } from '@/components/shared/ReasoningDisclosure'
 import type { ArenaScore } from '@/services/score-parser'
 
@@ -53,7 +53,7 @@ export function VerdictPanel({ judgeModelId, result, reasoningText, isJudging, s
         {scores.length > 0 && !isJudging && <Leaderboard scores={scores} modelIds={modelIds} />}
         <ReasoningDisclosure content={reasoningText} isStreaming={isJudging} />
         {isError && <div role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-[13px] text-danger">{result}</div>}
-        {!isError && result && <MarkdownRenderer content={result} />}
+        {!isError && result && <LazyMarkdown content={result} />}
         {isJudging && !result && !reasoningText && (
           <div className="space-y-2.5 py-1" aria-hidden="true">
             <div className="skeleton h-3 w-3/4" />

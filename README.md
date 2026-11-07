@@ -195,6 +195,7 @@ src/
 ```bash
 npm run dev      # 啟動開發伺服器
 npm run build    # TypeScript 檢查與 Vite 生產建置
+npm test         # 公式解析與 HTML 過濾的測試
 npm run preview  # 預覽 dist/
 ```
 
