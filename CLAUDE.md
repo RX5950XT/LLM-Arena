@@ -7,8 +7,8 @@ LLM 模型評比與辯論平台。用戶可以並行比較多個 LLM 的回應�
 | 分類 | 技術 |
 |------|------|
 | 框架 | React 18 + TypeScript |
-| 建置工具 | Vite 5 |
-| 路由 | React Router 6（HashRouter） |
+| 建置工具 | Vite 7 |
+| 路由 | React Router 7（HashRouter） |
 | 狀態管理 | Zustand 5 |
 | 樣式 | Tailwind CSS 3 |
 | Markdown | react-markdown + rehype-highlight + KaTeX（樣式在 `globals.css` 的 `.md`，沒有 typography 外掛） |

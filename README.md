@@ -153,10 +153,10 @@ openai/gpt-5.6-luna
 | 類別 | 技術 |
 | --- | --- |
 | UI | React 18 + TypeScript |
-| 建置 | Vite 5 |
+| 建置 | Vite 7 |
 | 樣式 | Tailwind CSS 3 |
 | 狀態 | Zustand 5 |
-| 路由 | React Router 6 + `HashRouter` |
+| 路由 | React Router 7 + `HashRouter` |
 | 文字 | `react-markdown`、`remark-gfm`、`rehype-highlight` |
 | 數學公式 | KaTeX |
 | API | OpenRouter Chat Completions + SSE |
