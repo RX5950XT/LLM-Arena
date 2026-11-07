@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSettingsStore } from '@/stores/settings-store'
+import { useStorageStatus } from '@/stores/storage-status'
 import { useHistoryStore } from '@/stores/history-store'
 import { processDroppedFiles } from '@/services/file-handler'
 import { Icon } from '@/components/shared/icons'
@@ -55,6 +56,11 @@ export function SettingsPage(): JSX.Element {
   }, [])
 
   const showSaved = (): void => {
+    // 存不進瀏覽器時由 StorageBanner 提示，這裡不能再說已儲存
+    if (useStorageStatus.getState().settings !== 'ok') {
+      setSaved(false)
+      return
+    }
     setSaved(true)
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => setSaved(false), 2000)
