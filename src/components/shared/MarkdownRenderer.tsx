@@ -1,7 +1,8 @@
 import { isValidElement, useMemo } from 'react'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { type Options } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import rehypeHighlight from 'rehype-highlight'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
@@ -71,11 +72,15 @@ function joinSplitInlineMath(text: string): string {
   return out.join('\n')
 }
 
+function mathMarker(tex: string, display: boolean): string {
+  return `<span data-tex="${encodeURIComponent(tex.trim())}"${display ? ' data-tex-display="true"' : ''}></span>`
+}
+
 /**
- * Pre-render all math expressions using KaTeX directly,
- * bypassing remark-math entirely for maximum compatibility.
+ * 把公式換成只帶原始碼的標記，等模型內容過濾完才由 MathOrSpan 畫出來。
+ * KaTeX 的輸出需要 class 和 style，若跟模型內容一起過濾就得放行這兩個屬性，等於讓模型能蓋住畫面。
  */
-function preRenderMath(text: string): string {
+function markMath(text: string): string {
   // 1. Normalize LaTeX delimiters
   let result = text
     .replace(/\\\[([^]*?)\\\]/g, (_, inner) => `$$${inner}$$`)
@@ -92,53 +97,84 @@ function preRenderMath(text: string): string {
   // 4. Join inline math split across lines
   result = joinSplitInlineMath(result)
 
-  // 5. Render display math first ($$...$$)
-  result = result.replace(/\$\$([\s\S]*?)\$\$/g, (_, inner: string) => {
-    try {
-      return katex.renderToString(inner.trim(), {
-        displayMode: true,
-        throwOnError: false
-      })
-    } catch {
-      return `$$${inner}$$`
-    }
-  })
+  // 5. Mark display math first ($$...$$)
+  result = result.replace(/\$\$([\s\S]*?)\$\$/g, (_, inner: string) => mathMarker(inner, true))
 
-  // 6. Render inline math ($...$)
+  // 6. Mark inline math ($...$)
   //    Match $...$ where inner content has no newline and no unescaped $
-  result = result.replace(/\$([^\n$]+?)\$/g, (_, inner: string) => {
-    try {
-      return katex.renderToString(inner.trim(), {
-        displayMode: false,
-        throwOnError: false
-      })
-    } catch {
-      return `$${inner}$`
-    }
-  })
+  result = result.replace(/\$([^\n$]+?)\$/g, (_, inner: string) => mathMarker(inner, false))
 
   return result
 }
 
-const TABLE_COMPONENT = {
-  table: ({ children }: { children?: React.ReactNode }) => (
-    <div className="table-wrap overflow-x-auto"><table>{children}</table></div>
-  )
+function decodeTex(encoded: string): string | null {
+  try {
+    return decodeURIComponent(encoded)
+  } catch {
+    return null
+  }
 }
 
-const SCREEN_COMPONENTS = { ...TABLE_COMPONENT, pre: CodeBlock }
-const SCREEN_REHYPE = [rehypeRaw, rehypeHighlight]
-const PLAIN_REHYPE = [rehypeRaw]
+type SpanProps = React.ComponentProps<'span'> & { node?: unknown; 'data-tex'?: string; 'data-tex-display'?: string }
+
+/** 模型也能自己寫這個標記，但結果只會是一條公式，和它直接寫 $...$ 相同。KaTeX 預設 trust: false，公式裡的連結與 HTML 指令都不會生效。 */
+function MathOrSpan({ node: _node, 'data-tex': encoded, 'data-tex-display': display, ...rest }: SpanProps): JSX.Element {
+  const tex = encoded === undefined ? null : decodeTex(encoded)
+  const html = useMemo(() => {
+    if (tex === null) return null
+    try {
+      return katex.renderToString(tex, { displayMode: display === 'true', throwOnError: false })
+    } catch (error) {
+      console.warn('公式渲染失敗', error)
+      return null
+    }
+  }, [tex, display])
+
+  if (html !== null) return <span dangerouslySetInnerHTML={{ __html: html }} />
+  return <span {...rest}>{rest.children ?? tex}</span>
+}
+
+function HiddenImage({ alt }: { alt?: string }): JSX.Element {
+  return <span className="text-faint">［圖片未顯示{alt ? `：${alt}` : ''}］</span>
+}
+
+/**
+ * 模型回應是不可信內容：API Key 存在 localStorage，能在這個網站執行的程式就拿得到它。
+ * 以 GitHub 的白名單為底，再拿掉所有會對外發請求的圖片來源。
+ */
+const SANITIZE_SCHEMA = {
+  ...defaultSchema,
+  strip: [...(defaultSchema.strip ?? []), 'style'],
+  tagNames: (defaultSchema.tagNames ?? []).filter((tag) => tag !== 'picture' && tag !== 'source'),
+  attributes: {
+    ...defaultSchema.attributes,
+    img: [],
+    span: [...(defaultSchema.attributes?.span ?? []), 'dataTex', 'dataTexDisplay']
+  }
+}
+
+const BASE_COMPONENTS = {
+  table: ({ children }: { children?: React.ReactNode }) => (
+    <div className="table-wrap overflow-x-auto"><table>{children}</table></div>
+  ),
+  span: MathOrSpan,
+  img: HiddenImage
+}
+
+const SCREEN_COMPONENTS = { ...BASE_COMPONENTS, pre: CodeBlock }
+// 上色要排在過濾之後，否則上色用的 class 會被清掉
+const SCREEN_REHYPE: Options['rehypePlugins'] = [rehypeRaw, [rehypeSanitize, SANITIZE_SCHEMA], rehypeHighlight]
+const PLAIN_REHYPE: Options['rehypePlugins'] = [rehypeRaw, [rehypeSanitize, SANITIZE_SCHEMA]]
 
 export function MarkdownRenderer({ content, className = '', plain = false }: MarkdownRendererProps): JSX.Element {
-  const rendered = useMemo(() => preRenderMath(content), [content])
+  const rendered = useMemo(() => markMath(content), [content])
 
   return (
     <div className={`prose ${plain ? '' : 'md'} ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={plain ? PLAIN_REHYPE : SCREEN_REHYPE}
-        components={plain ? TABLE_COMPONENT : SCREEN_COMPONENTS}
+        components={plain ? BASE_COMPONENTS : SCREEN_COMPONENTS}
       >
         {rendered}
       </ReactMarkdown>

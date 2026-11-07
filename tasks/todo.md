@@ -173,3 +173,12 @@
 - 驗證：`tsc -b`、`vite build` 通過；Playwright mock 串流跑完三種模式、強制暫停、切頁回來、失敗模型、15 個模型、超長名稱、手機寬度，無 console 錯誤；PDF 用 `pdftoppm` 渲染確認版面正常；`impeccable detect` 0 個問題。
 - 順手修掉既有問題：`useThrottledContent` 在 StrictMode 下計時器被清掉卻沒歸零，開發模式的串流文字會卡到結束才出現。
 - 未驗證：真實 OpenRouter 串流（模型清單 API 有實際呼叫）、Firefox／Safari、實體手機。
+
+## 本次需求：過濾模型回應的 HTML
+
+- [x] 加入 `rehype-sanitize`，公式改為過濾後才畫出來
+- [x] 實測 iframe、script、事件屬性、外部圖片、蓋版內容、`javascript:` 連結都無效，排版與公式正常
+
+## 已知問題
+
+- 辯論 PDF：內容有 `---`、`<br>`、任務清單或 `&nbsp;` 時匯出失敗。原因推測是 `item.innerHTML` 產生的 HTML 不是合法 XML，放進 SVG 後圖片載入失敗；修過濾前就存在。

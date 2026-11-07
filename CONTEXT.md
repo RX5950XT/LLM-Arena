@@ -22,6 +22,11 @@
 - 側邊欄依目前路由顯示該模式的歷史，`新對話` 保留陣容。
 - `.md` 只給畫面用；PDF 走 `plain` 模式，改 Markdown 樣式不會影響 PDF，改 `MarkdownRenderer` 的標記結構則要重新檢查 PDF。
 
+## 模型回應的安全界線
+
+- API Key 在 `localStorage`，所以模型回應一律視為不可信內容。曾實測 `<iframe srcdoc>` 內的程式讀得到金鑰，修法與規則見 `MarkdownRenderer.tsx` 的 `SANITIZE_SCHEMA`。
+- 上色（`rehype-highlight`）要排在過濾之後，否則 class 會被清掉。
+
 ## 驗證
 
 - `npm run build` 已通過（TypeScript 檢查與 Vite production build）。
