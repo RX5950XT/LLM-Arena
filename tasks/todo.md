@@ -157,3 +157,19 @@
 - 裁判區改用三欄 Grid，綜合裁判跨欄放在下一列。
 - `debate-pdf` 使用瀏覽器原生 Canvas 與 Blob 產生 A4 PDF，保留訊息陣列順序，再接續輸出四位裁判。
 - 驗證：`npm run build` 通過；Playwright mock 首兩次請求為反方、正方；PDF 下載成功，`pdfinfo` 顯示短內容 1 頁／長內容 13 頁 A4，`pdftoppm` 渲染無錯誤。
+
+## 本次需求：UI/UX 全面改版
+
+- [x] 建立設計 token（後改為使用者選定的石墨配色），修正 Markdown 沒有樣式的問題
+- [x] 三個執行頁改成「設定 → 結果 → 底部輸入區」，送出後自動收合設定
+- [x] 模型選單可搜尋 OpenRouter 全部模型；陣容記憶；新對話保留陣容
+- [x] 回應卡片顯示速度統計、可複製、重複回答分頁、並排／單欄切換
+- [x] 競技場排行榜與名次、辯論回合對照與比分、供應商價格表
+- [x] 側邊欄改為依模式顯示歷史，可搜尋、可收起
+- [x] 首次使用可直接貼金鑰，錯誤訊息改為行內且說明下一步
+
+## 本次需求回顧
+
+- 驗證：`tsc -b`、`vite build` 通過；Playwright mock 串流跑完三種模式、強制暫停、切頁回來、失敗模型、15 個模型、超長名稱、手機寬度，無 console 錯誤；PDF 用 `pdftoppm` 渲染確認版面正常；`impeccable detect` 0 個問題。
+- 順手修掉既有問題：`useThrottledContent` 在 StrictMode 下計時器被清掉卻沒歸零，開發模式的串流文字會卡到結束才出現。
+- 未驗證：真實 OpenRouter 串流（模型清單 API 有實際呼叫）、Firefox／Safari、實體手機。

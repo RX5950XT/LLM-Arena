@@ -143,13 +143,10 @@ export const useDebateStore = create<DebateStore & DebateActions>((set, get) => 
       )
     })),
 
+  // 新對話只清議題與內容，正反方與裁判的模型留著
   reset: () =>
-    set({
+    set((state) => ({
       topic: '',
-      totalRounds: DEFAULT_DEBATE_ROUNDS,
-      startingSide: 'for',
-      forModel: { modelId: '', systemPrompt: DEFAULT_FOR_PROMPT },
-      againstModel: { modelId: '', systemPrompt: DEFAULT_AGAINST_PROMPT },
       attachments: [],
       status: 'idle',
       currentRound: 0,
@@ -157,8 +154,8 @@ export const useDebateStore = create<DebateStore & DebateActions>((set, get) => 
       messages: [],
       currentStreamText: '',
       currentStreamReasoningText: '',
-      judges: defaultJudges.map((j) => ({ ...j }))
-    }),
+      judges: state.judges.map((j) => ({ ...j, analysis: '', reasoningText: '', isStreaming: false, error: null }))
+    })),
 
   resetDebate: () =>
     set({

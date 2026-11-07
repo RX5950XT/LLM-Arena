@@ -1,39 +1,100 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  /* 石墨配色：介面只用純灰階，顏色留給正反方與狀態，主色就是最深（深色模式最亮）的墨色 */
+  :root {
+    color-scheme: light;
+    --canvas: 245 245 245;
+    --sunken: 235 235 235;
+    --panel: 255 255 255;
+    --raised: 255 255 255;
+    --line: 225 225 225;
+    --line-strong: 195 195 195;
+    --ink: 23 23 23;
+    --reading: 45 45 45;
+    --muted: 92 92 92;
+    --faint: 105 105 105;
+    --accent: 23 23 23;
+    --accent-ink: 255 255 255;
+    --accent-text: 23 23 23;
+    --pro: 29 95 209;
+    --con: 200 50 43;
+    --warn: 161 98 7;
+    --danger: 190 40 35;
+    --ok: 4 120 87;
+  }
+
+  .dark {
+    color-scheme: dark;
+    --canvas: 18 18 18;
+    --sunken: 12 12 12;
+    --panel: 26 26 26;
+    --raised: 32 32 32;
+    --line: 46 46 46;
+    --line-strong: 74 74 74;
+    --ink: 237 237 237;
+    --reading: 212 212 212;
+    --muted: 170 170 170;
+    --faint: 138 138 138;
+    --accent: 237 237 237;
+    --accent-ink: 18 18 18;
+    --accent-text: 237 237 237;
+    --pro: 86 145 239;
+    --con: 233 100 91;
+    --warn: 240 184 90;
+    --danger: 255 128 118;
+    --ok: 90 225 178;
+  }
+
   html, body, #root {
     height: 100%;
     overflow: hidden;
   }
 
   body {
-    @apply antialiased;
-    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Microsoft JhengHei', sans-serif;
+    @apply bg-canvas text-ink antialiased;
+    font-family: 'IBM Plex Sans', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, 'Microsoft JhengHei', sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
   }
 
   code, pre, kbd, samp {
     font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
   }
 
-  ::-webkit-scrollbar {
-    width: 5px;
-    height: 5px;
+  ::selection {
+    background: rgb(var(--accent) / 0.28);
   }
 
-  ::-webkit-scrollbar-track {
-    @apply bg-transparent;
+  input, textarea {
+    caret-color: rgb(var(--accent));
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line-strong)) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-slate-300 dark:bg-slate-600 rounded-full;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background: rgb(var(--line-strong)) padding-box;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-slate-400 dark:bg-slate-500;
+    background: rgb(var(--faint)) padding-box;
   }
 
   .reasoning-summary {
@@ -46,5 +107,226 @@
 
   .reasoning-details[open] .reasoning-summary svg {
     transform: rotate(90deg);
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[13px] font-medium transition-colors duration-150 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply bg-accent text-accent-ink hover:bg-accent/85 disabled:bg-line disabled:text-faint;
+  }
+
+  .btn-outline {
+    @apply border border-line-strong text-ink hover:bg-sunken disabled:border-line disabled:text-faint disabled:hover:bg-transparent;
+  }
+
+  .btn-ghost {
+    @apply text-muted hover:bg-sunken hover:text-ink disabled:text-faint disabled:hover:bg-transparent;
+  }
+
+  .btn-danger {
+    @apply bg-danger text-canvas hover:bg-danger/85;
+  }
+
+  .icon-btn {
+    @apply inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-muted transition-colors duration-150 hover:bg-sunken hover:text-ink disabled:cursor-not-allowed disabled:text-faint disabled:hover:bg-transparent;
+  }
+
+  .field {
+    @apply h-9 w-full min-w-0 rounded-lg border border-line bg-raised px-3 text-[13px] text-ink transition-colors duration-150 placeholder:text-faint hover:border-line-strong focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .field-area {
+    @apply h-auto resize-y py-2 leading-relaxed;
+  }
+
+  .panel {
+    @apply rounded-xl border border-line bg-panel;
+  }
+
+  .token {
+    @apply inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-sunken font-mono text-xs font-semibold text-muted;
+  }
+
+  .field-label {
+    @apply text-[13px] font-medium text-muted;
+  }
+
+  .num {
+    @apply font-mono;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 只在滑鼠環境靠 hover 顯示；觸控裝置永遠看得到 */
+  .reveal {
+    @apply opacity-0 transition-opacity duration-150 focus-visible:opacity-100 group-hover:opacity-100;
+  }
+
+  @media (hover: none) {
+    .reveal {
+      opacity: 1;
+    }
+  }
+
+  @media (pointer: coarse) {
+    .btn {
+      height: 2.5rem;
+    }
+
+    .icon-btn {
+      height: 2.5rem;
+      width: 2.5rem;
+    }
+
+    .field {
+      height: 2.5rem;
+      font-size: 16px;
+    }
+
+    .field-area {
+      height: auto;
+    }
+  }
+
+  .range {
+    @apply h-5 w-full cursor-pointer appearance-none bg-transparent disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .range::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 4px;
+    background: linear-gradient(to right, rgb(var(--accent)) var(--pct, 0%), rgb(var(--line-strong)) var(--pct, 0%));
+  }
+
+  .range::-moz-range-track {
+    height: 4px;
+    border-radius: 4px;
+    background: rgb(var(--line-strong));
+  }
+
+  .range::-moz-range-progress {
+    height: 4px;
+    border-radius: 4px;
+    background: rgb(var(--accent));
+  }
+
+  .range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    margin-top: -6px;
+    border: 3px solid rgb(var(--accent));
+    border-radius: 50%;
+    background: rgb(var(--raised));
+  }
+
+  .range::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    border: 3px solid rgb(var(--accent));
+    border-radius: 50%;
+    background: rgb(var(--raised));
+  }
+
+  .skeleton {
+    @apply rounded bg-line;
+    animation: skeleton-pulse 1.6s ease-in-out infinite;
+  }
+
+  /* 生成中的卡片頂端有一條持續滑過的細線，一眼看出誰還在跑 */
+  .live-bar {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 2px;
+    overflow: hidden;
+    background: rgb(var(--live-color, var(--accent)) / 0.18);
+  }
+
+  .live-bar::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    width: 40%;
+    background: rgb(var(--live-color, var(--accent)));
+    animation: live-sweep 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
+  .live-dot {
+    @apply inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-accent;
+    animation: skeleton-pulse 1.2s ease-in-out infinite;
+  }
+
+  .card-enter {
+    animation: card-enter 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
+/* 模型回覆的閱讀排版。PDF 匯出有自己的樣式，不套用 .md */
+.md {
+  color: rgb(var(--reading));
+  font-size: 14.5px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0.7em 0; }
+.md h1, .md h2, .md h3, .md h4 { margin: 1.4em 0 0.5em; color: rgb(var(--ink)); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+.md h1 { font-size: 1.3em; }
+.md h2 { font-size: 1.18em; }
+.md h3 { font-size: 1.06em; }
+.md h4 { font-size: 1em; color: rgb(var(--muted)); }
+.md strong { color: rgb(var(--ink)); font-weight: 600; }
+.md ul, .md ol { margin: 0.7em 0; padding-left: 1.5em; }
+.md ul { list-style: disc; }
+.md ol { list-style: decimal; }
+.md li { margin: 0.25em 0; }
+.md li::marker { color: rgb(var(--faint)); }
+.md a { color: rgb(var(--accent-text)); text-decoration: underline; text-underline-offset: 2px; }
+.md hr { margin: 1.4em 0; border: 0; border-top: 1px solid rgb(var(--line)); }
+.md blockquote { margin: 0.9em 0; padding: 0.1em 0 0.1em 0.9em; border-left: 1px solid rgb(var(--line-strong)); color: rgb(var(--muted)); }
+.md img { max-width: 100%; height: auto; border-radius: 8px; }
+.md :not(pre) > code { padding: 0.1em 0.35em; border-radius: 4px; background: rgb(var(--sunken)); font-size: 0.88em; }
+.md table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.md th, .md td { padding: 6px 10px; border-bottom: 1px solid rgb(var(--line)); text-align: left; vertical-align: top; overflow-wrap: normal; }
+.md th { border-bottom-color: rgb(var(--line-strong)); color: rgb(var(--muted)); font-weight: 500; white-space: nowrap; }
+.md .table-wrap { margin: 0.9em 0; overflow-x: auto; }
+.md .katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.2em 0; }
+
+.code-block { margin: 0.9em 0; overflow: hidden; border: 1px solid rgb(var(--line)); border-radius: 8px; background: rgb(var(--sunken)); }
+.code-block header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 4px 2px 12px; border-bottom: 1px solid rgb(var(--line)); color: rgb(var(--faint)); font: 500 11px 'JetBrains Mono', Consolas, monospace; }
+.code-block pre { overflow-x: auto; padding: 10px 12px; font-size: 12.5px; line-height: 1.6; }
+
+/* 程式碼上色，同樣取自主題色票 */
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-doctag { color: rgb(var(--pro)); }
+.hljs-string, .hljs-attr, .hljs-template-tag, .hljs-addition { color: rgb(var(--accent-text)); }
+.hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet { color: rgb(var(--warn)); }
+.hljs-title, .hljs-section, .hljs-name, .hljs-type { color: rgb(var(--con)); }
+.hljs-comment, .hljs-quote, .hljs-meta { color: rgb(var(--faint)); font-style: italic; }
+.hljs-deletion { color: rgb(var(--danger)); }
+
+@keyframes live-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+
+@keyframes skeleton-pulse {
+  50% { opacity: 0.45; }
+}
+
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
   }
 }

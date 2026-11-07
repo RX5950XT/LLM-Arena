@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useHistoryStore } from '@/stores/history-store'
 import { OpenRouterClient } from '@/services/openrouter-client'
 import { isProviderRunActive, startProviderRun, stopProviderRun } from '@/services/provider-runner'
-import { ModelSlot } from '@/components/shared/ModelSlot'
+import { ApiKeyBanner, ModelName, Segmented } from '@/components/shared/controls'
 import { DropZone } from '@/components/shared/DropZone'
-import { StreamingText } from '@/components/shared/StreamingText'
+import { Icon, Spinner } from '@/components/shared/icons'
+import { ModelSlot } from '@/components/shared/ModelSlot'
+import { ResponseCard, responseGridClass, useResponseLayout } from '@/components/shared/ResponseCard'
 import type { Attachment, ProviderEndpoint } from '@/types/models'
 import type { ProviderHistoryResponse, StoredAttachment } from '@/types/history'
 
@@ -23,6 +25,7 @@ function formatTokens(value: number | null): string {
 function formatPrice(value: number | null): string {
   if (value === null) return '—'
   const perMillion = value * 1_000_000
+  if (perMillion === 0) return '免費'
   return perMillion < 0.01 ? `$${perMillion.toExponential(1)}` : `$${perMillion.toFixed(2)}`
 }
 
@@ -51,6 +54,87 @@ function fromHistoryResponses(responses: Record<string, ProviderHistoryResponse>
   }]))
 }
 
+/** 輸入加輸出單價最低的供應商；只有一家或價格都一樣時不標示。 */
+function findCheapestSlugs(endpoints: ProviderEndpoint[]): Set<string> {
+  const priced = endpoints.flatMap((endpoint) =>
+    endpoint.promptPrice !== null && endpoint.completionPrice !== null
+      ? [{ slug: endpoint.slug, total: endpoint.promptPrice + endpoint.completionPrice }]
+      : []
+  )
+  if (priced.length < 2) return new Set()
+  const lowest = Math.min(...priced.map((entry) => entry.total))
+  if (priced.every((entry) => entry.total === lowest)) return new Set()
+  return new Set(priced.filter((entry) => entry.total === lowest).map((entry) => entry.slug))
+}
+
+function EndpointTable({ endpoints, selectedSlugs, disabled, onToggle, onToggleAll }: {
+  endpoints: ProviderEndpoint[]
+  selectedSlugs: string[]
+  disabled: boolean
+  onToggle: (slug: string) => void
+  onToggleAll: () => void
+}): JSX.Element {
+  const cheapest = useMemo(() => findCheapestSlugs(endpoints), [endpoints])
+  const allSelected = selectedSlugs.length === endpoints.length
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 px-1 pb-1.5">
+        <span className="num text-xs text-muted">已選 {selectedSlugs.length} / {endpoints.length} 家，每家各送一次</span>
+        <button type="button" onClick={onToggleAll} disabled={disabled} className="btn btn-ghost !h-7 !px-2 !text-xs">
+          {allSelected ? '全部取消' : '全部選取'}
+        </button>
+      </div>
+      <div className="hidden grid-cols-[1.25rem_minmax(0,1fr)_6rem_5rem_5rem] gap-3 border-b border-line px-2.5 pb-1.5 text-[11px] font-medium text-faint sm:grid">
+        <span />
+        <span>供應商</span>
+        <span className="text-right">上下文</span>
+        <span className="text-right">輸入 / 1M</span>
+        <span className="text-right">輸出 / 1M</span>
+      </div>
+      <div className="max-h-[min(42vh,26rem)] space-y-px overflow-y-auto pt-1">
+        {endpoints.map((endpoint) => {
+          const selected = selectedSlugs.includes(endpoint.slug)
+          return (
+            <label
+              key={endpoint.slug}
+              className={`grid cursor-pointer grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-x-3 rounded-lg px-2.5 py-2 transition-colors duration-150 sm:grid-cols-[1.25rem_minmax(0,1fr)_6rem_5rem_5rem] ${
+                selected ? 'bg-accent/10' : 'hover:bg-sunken'
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={selected}
+                onChange={() => onToggle(endpoint.slug)}
+                disabled={disabled}
+                className="h-4 w-4 accent-[rgb(var(--accent))]"
+              />
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5">
+                  <span className="truncate text-[13px] font-medium">{endpoint.name}</span>
+                  {cheapest.has(endpoint.slug) && (
+                    <span className="shrink-0 rounded bg-accent/15 px-1 text-[11px] font-medium text-accent-text">最便宜</span>
+                  )}
+                </span>
+                <span className="block truncate font-mono text-[11px] text-faint">{endpoint.slug}</span>
+              </span>
+              <span className="num col-start-2 mt-0.5 text-xs text-muted sm:col-start-auto sm:mt-0 sm:text-right">
+                <span className="sm:hidden">上下文 </span>{formatTokens(endpoint.contextLength)}
+              </span>
+              <span className="num col-start-2 text-xs text-muted sm:col-start-auto sm:text-right">
+                <span className="sm:hidden">輸入 </span>{formatPrice(endpoint.promptPrice)}
+              </span>
+              <span className="num col-start-2 text-xs text-muted sm:col-start-auto sm:text-right">
+                <span className="sm:hidden">輸出 </span>{formatPrice(endpoint.completionPrice)}
+              </span>
+            </label>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function ProviderComparisonPage(): JSX.Element {
   const { apiUrl, apiKey, isLoaded, modelList } = useSettingsStore()
   const activeProviderId = useHistoryStore((state) => state.activeProviderId)
@@ -69,6 +153,9 @@ export function ProviderComparisonPage(): JSX.Element {
   const [isSending, setIsSending] = useState(false)
   const [endpointError, setEndpointError] = useState<string | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
+  const [isSetupOpen, setIsSetupOpen] = useState(false)
+  const [collapsedSlugs, setCollapsedSlugs] = useState<Set<string>>(new Set())
+  const [layout, setLayout] = useResponseLayout()
   const endpointRequestRef = useRef<AbortController | null>(null)
   const modelInitializedRef = useRef(false)
 
@@ -110,15 +197,20 @@ export function ProviderComparisonPage(): JSX.Element {
   }, [activeProviderEntry, activeProviderId, modelList])
 
   useEffect(() => {
+    setIsSetupOpen(false)
+    setCollapsedSlugs(new Set())
+  }, [activeProviderId])
+
+  useEffect(() => {
     return () => endpointRequestRef.current?.abort()
   }, [])
 
-  const loadEndpoints = useCallback(async () => {
+  const loadEndpoints = useCallback(async (targetModel: string) => {
     if (!apiKey) {
-      setEndpointError('請先在設定頁面輸入 OpenRouter API Key。')
+      setEndpointError('請先在上方貼上 OpenRouter API Key。')
       return
     }
-    if (!modelId.trim()) {
+    if (!targetModel.trim()) {
       setEndpointError('請先選擇模型。')
       return
     }
@@ -134,13 +226,13 @@ export function ProviderComparisonPage(): JSX.Element {
 
     try {
       const client = new OpenRouterClient(apiUrl, apiKey)
-      const nextEndpoints = await client.getModelEndpoints(modelId, controller.signal)
+      const nextEndpoints = await client.getModelEndpoints(targetModel, controller.signal)
       if (controller.signal.aborted) return
       setRunError(null)
       setEndpoints(nextEndpoints)
       setSelectedSlugs(nextEndpoints.slice(0, 2).map((endpoint) => endpoint.slug))
       if (nextEndpoints.length === 0) {
-        setEndpointError('這個模型目前沒有可用的供應商 endpoint。')
+        setEndpointError('這個模型目前沒有可用的供應商，換一個模型試試看。')
       }
     } catch (err) {
       if (controller.signal.aborted) return
@@ -151,7 +243,7 @@ export function ProviderComparisonPage(): JSX.Element {
         setIsLoadingEndpoints(false)
       }
     }
-  }, [apiKey, apiUrl, modelId])
+  }, [apiKey, apiUrl])
 
   const toggleProvider = useCallback((slug: string) => {
     setRunError(null)
@@ -174,7 +266,7 @@ export function ProviderComparisonPage(): JSX.Element {
   const handleCompare = useCallback(() => {
     if (isSending) return
     if (!apiKey) {
-      setRunError('請先在設定頁面輸入 OpenRouter API Key。')
+      setRunError('還沒有 API Key，請先在上方貼上金鑰。')
       return
     }
     if (!modelId.trim() || !userInput.trim()) {
@@ -182,15 +274,17 @@ export function ProviderComparisonPage(): JSX.Element {
       return
     }
 
-    const selectedEndpoints = endpoints.filter((endpoint) => selectedSlugs.includes(endpoint.slug))
-    if (selectedEndpoints.length === 0) {
-      setRunError('請至少選擇 1 個供應商。')
+    const chosen = endpoints.filter((endpoint) => selectedSlugs.includes(endpoint.slug))
+    if (chosen.length === 0) {
+      setRunError(endpoints.length === 0 ? '請先查詢這個模型的供應商。' : '請至少勾選 1 個供應商。')
       return
     }
 
     setRunError(null)
     setIsSending(true)
-    const initialResponses = Object.fromEntries(selectedEndpoints.map((endpoint) => [endpoint.slug, emptyResponse()]))
+    setIsSetupOpen(false)
+    setCollapsedSlugs(new Set())
+    const initialResponses = Object.fromEntries(chosen.map((endpoint) => [endpoint.slug, emptyResponse()]))
     setResponses(initialResponses)
 
     const historyId = useHistoryStore.getState().saveProvider({
@@ -201,7 +295,7 @@ export function ProviderComparisonPage(): JSX.Element {
       userInput,
       attachments: toStoredAttachments(attachments),
       endpoints,
-      selectedSlugs: selectedEndpoints.map((endpoint) => endpoint.slug),
+      selectedSlugs: chosen.map((endpoint) => endpoint.slug),
       responses: initialResponses,
       isSending: true
     })
@@ -214,205 +308,158 @@ export function ProviderComparisonPage(): JSX.Element {
       userInput,
       attachments,
       endpoints,
-      selectedSlugs: selectedEndpoints.map((endpoint) => endpoint.slug)
+      selectedSlugs: chosen.map((endpoint) => endpoint.slug)
     })
   }, [apiKey, apiUrl, attachments, endpoints, isSending, modelId, reasoning, selectedSlugs, systemPrompt, userInput])
 
-  const allSelected = endpoints.length > 0 && selectedSlugs.length === endpoints.length
   const selectedEndpoints = endpoints.filter((endpoint) => selectedSlugs.includes(endpoint.slug))
+  const hasResponses = selectedEndpoints.length > 0 && Object.keys(responses).length > 0
+  const showSetup = !hasResponses || isSetupOpen
+  const doneCount = selectedEndpoints.filter((endpoint) => responses[endpoint.slug] && !responses[endpoint.slug].isStreaming).length
 
   return (
-    <div className="mx-auto flex max-w-[1440px] flex-col gap-4 p-4 md:p-5">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">OpenRouter 供應商比較</h2>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            固定同一個模型與問題，分別送到不同供應商，直接看回應、速度與價格差異。
-          </p>
-        </div>
-        <span className="w-fit rounded-full bg-primary-500/10 px-2.5 py-1 text-xs font-medium text-primary-700 dark:text-primary-300">
-          同模型 · 多供應商
-        </span>
+    <div className="mx-auto flex min-h-full w-full max-w-[1760px] flex-col gap-3 px-4 pt-4 md:px-6 md:pt-5">
+      <header>
+        <h2 className="text-xl font-semibold">供應商比較</h2>
+        <p className="mt-0.5 text-[13px] text-muted">同一個模型、同一個問題，送到不同供應商，比回應、速度與價格。</p>
       </header>
+      <ApiKeyBanner />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(360px,1.1fr)]">
-        <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 md:p-5">
-          <div className="mb-4">
-            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">先設定比較條件</h3>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">模型和問題固定，差異才會來自供應商。</p>
-          </div>
-
-          <div className="space-y-4">
-            <ModelSlot
-              label="比較模型"
-              modelId={modelId}
-              systemPrompt={systemPrompt}
-              reasoning={reasoning}
-              showPromptLibrary
-              onModelIdChange={(value) => {
-                setModelId(value)
-                setEndpoints([])
-                setSelectedSlugs([])
-                setResponses({})
-                setEndpointError(null)
-              }}
-              onSystemPromptChange={setSystemPrompt}
-              onReasoningChange={setReasoning}
-            />
-
+      {showSetup ? (
+        <section aria-label="比較條件" className="panel card-enter">
+          <div className="flex items-start gap-2 p-3">
+            <div className="min-w-0 flex-1">
+              <ModelSlot
+                label="比較模型"
+                modelId={modelId}
+                systemPrompt={systemPrompt}
+                reasoning={reasoning}
+                disabled={isSending}
+                showPromptLibrary
+                onModelIdChange={(value) => {
+                  setModelId(value)
+                  setEndpoints([])
+                  setSelectedSlugs([])
+                  setResponses({})
+                  setEndpointError(null)
+                }}
+                onModelPick={(value) => void loadEndpoints(value)}
+                onModelEnter={() => void loadEndpoints(modelId)}
+                onSystemPromptChange={setSystemPrompt}
+                onReasoningChange={setReasoning}
+              />
+            </div>
             <button
               type="button"
-              onClick={loadEndpoints}
+              onClick={() => void loadEndpoints(modelId)}
               disabled={isLoadingEndpoints || isSending || !modelId.trim()}
-              className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-primary-600 px-3 py-2 text-sm font-medium text-primary-700 transition-colors hover:bg-primary-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 dark:border-primary-500 dark:text-primary-300 dark:hover:bg-primary-950/30 dark:disabled:border-slate-700 dark:disabled:text-slate-600"
+              className="btn btn-outline"
             >
-              {isLoadingEndpoints && (
-                <svg className="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z" />
-                </svg>
-              )}
-              {isLoadingEndpoints ? '正在查詢供應商...' : '查詢可用供應商'}
+              {isLoadingEndpoints ? <Spinner /> : <Icon name="search" />}
+              <span className="hidden sm:inline">{isLoadingEndpoints ? '查詢中' : '查詢供應商'}</span>
             </button>
-
-            <DropZone
-              attachments={attachments}
-              onAdd={(attachment) => setAttachments((current) => [...current, attachment])}
-              onRemove={(id) => setAttachments((current) => current.filter((attachment) => attachment.id !== id))}
-              userInput={userInput}
-              onInputChange={setUserInput}
-              onSend={handleCompare}
-              onStop={handleStop}
-              isSending={isSending}
-              placeholder="輸入要比較的問題..."
-            />
-          </div>
-        </section>
-
-        <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 md:p-5">
-          <div className="mb-3 flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">選擇供應商</h3>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">每個勾選項目會獨立發送一次，選 1 家也可以查看單一回應。</p>
-            </div>
-            {endpoints.length > 0 && (
-              <button
-                type="button"
-                onClick={toggleAllProviders}
-                disabled={isSending}
-                className="shrink-0 text-xs font-medium text-primary-600 hover:text-primary-700 disabled:cursor-not-allowed disabled:text-slate-400 dark:text-primary-400 dark:hover:text-primary-300"
-              >
-                {allSelected ? '全部取消' : '全部選取'}
+            {hasResponses && (
+              <button type="button" onClick={() => setIsSetupOpen(false)} aria-label="收合條件" title="收合條件" className="icon-btn !h-9 !w-9">
+                <Icon name="chevronDown" className="h-3.5 w-3.5 rotate-180" />
               </button>
             )}
           </div>
 
-          {endpointError && (
-            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-600 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-400">
-              {endpointError}
-            </div>
-          )}
-
-          {isLoadingEndpoints && (
-            <div className="space-y-2" aria-label="載入供應商">
-              {[1, 2, 3].map((item) => <div key={item} className="h-[68px] animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />)}
-            </div>
-          )}
-
-          {!isLoadingEndpoints && endpoints.length === 0 && !endpointError && (
-            <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-              先查詢模型，這裡會列出它可用的供應商。
-            </div>
-          )}
-
-          {!isLoadingEndpoints && endpoints.length > 0 && (
-            <div className="max-h-[min(42vh,28rem)] space-y-2 overflow-y-auto pr-1">
-              {endpoints.map((endpoint) => {
-                const selected = selectedSlugs.includes(endpoint.slug)
-                return (
-                  <label
-                    key={endpoint.slug}
-                    className={`flex min-h-[68px] cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
-                      selected
-                        ? 'border-primary-500/60 bg-primary-50/70 dark:border-primary-500/50 dark:bg-primary-950/20'
-                        : 'border-slate-200 hover:border-slate-300 dark:border-slate-800 dark:hover:border-slate-700'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      onChange={() => toggleProvider(endpoint.slug)}
-                      disabled={isSending}
-                      className="h-4 w-4 shrink-0 accent-primary-600"
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-slate-800 dark:text-slate-200">{endpoint.name}</span>
-                      <span className="mt-0.5 block truncate font-mono text-[11px] text-slate-400 dark:text-slate-500">{endpoint.slug}</span>
-                    </span>
-                    <span className="hidden shrink-0 text-right text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 sm:block">
-                      <span className="block">上下文 {formatTokens(endpoint.contextLength)}</span>
-                      <span className="block">入 {formatPrice(endpoint.promptPrice)} · 出 {formatPrice(endpoint.completionPrice)} / 1M</span>
-                    </span>
-                  </label>
-                )
-              })}
-            </div>
-          )}
-
-          {endpoints.length > 0 && (
-            <div className="mt-3 flex flex-col gap-2 border-t border-slate-200 pt-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
-              <span className="text-xs text-slate-500 dark:text-slate-400">已選 {selectedSlugs.length} / {endpoints.length}</span>
-              <button
-                type="button"
-                onClick={handleCompare}
-                disabled={isSending || selectedSlugs.length === 0 || !userInput.trim()}
-                className="min-h-10 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-700"
-              >
-                {isSending ? '比較生成中...' : '開始比較'}
-              </button>
-            </div>
-          )}
-          {runError && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{runError}</p>}
-        </section>
-      </div>
-
-      {selectedEndpoints.length > 0 && Object.keys(responses).length > 0 && (
-        <section aria-live="polite" className="min-w-0">
-          <div className="mb-3 flex items-end justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">回應比較</h3>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">思考內容預設收起，點開即可查看。</p>
-            </div>
-            <span className="shrink-0 text-xs font-mono text-slate-400 dark:text-slate-500">{selectedEndpoints.length} providers</span>
+          <div className="border-t border-line p-3">
+            {endpointError && (
+              <div role="alert" className="mb-2 rounded-lg bg-danger/10 px-3 py-2 text-[13px] text-danger">{endpointError}</div>
+            )}
+            {isLoadingEndpoints && (
+              <div className="space-y-2" aria-label="載入供應商">
+                {[1, 2, 3].map((item) => <div key={item} className="skeleton h-11 rounded-lg" />)}
+              </div>
+            )}
+            {!isLoadingEndpoints && endpoints.length === 0 && !endpointError && (
+              <p className="py-2 text-[13px] text-muted">選好模型後按「查詢供應商」，這裡會列出每家的上下文長度與價格。</p>
+            )}
+            {!isLoadingEndpoints && endpoints.length > 0 && (
+              <EndpointTable
+                endpoints={endpoints}
+                selectedSlugs={selectedSlugs}
+                disabled={isSending}
+                onToggle={toggleProvider}
+                onToggleAll={toggleAllProviders}
+              />
+            )}
           </div>
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+        </section>
+      ) : (
+        <div className="panel flex items-center gap-2 py-1.5 pl-3 pr-1.5">
+          <ModelName id={modelId} className="min-w-0 text-xs" />
+          <span className="num flex-1 whitespace-nowrap text-xs text-muted">· {selectedEndpoints.length} 家供應商</span>
+          <button type="button" onClick={() => setIsSetupOpen(true)} className="btn btn-ghost !h-8">
+            編輯條件
+            <Icon name="chevronDown" className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {hasResponses && (
+        <section aria-label="供應商回應" className="flex flex-col gap-3 pt-1">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold">回應</h3>
+            <span className="num text-xs text-muted">{doneCount} / {selectedEndpoints.length} 完成</span>
+            <div className="ml-auto">
+              <Segmented
+                label="回應版面"
+                value={layout}
+                options={[
+                  { value: 'columns', label: <Icon name="columns" className="h-3.5 w-3.5" />, title: '並排比較' },
+                  { value: 'stack', label: <Icon name="rows" className="h-3.5 w-3.5" />, title: '單欄閱讀全文' }
+                ]}
+                onChange={setLayout}
+              />
+            </div>
+          </div>
+          <div className={responseGridClass(layout)}>
             {selectedEndpoints.map((endpoint) => {
               const response = responses[endpoint.slug]
               if (!response) return null
               return (
-                <article key={endpoint.slug} className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-                  <header className="flex min-h-[60px] items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/80">
-                    <span className="h-2 w-2 shrink-0 rounded-full bg-primary-500" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-slate-800 dark:text-slate-200">{endpoint.name}</span>
-                      <span className="block truncate font-mono text-[11px] text-slate-400 dark:text-slate-500">{endpoint.slug}</span>
-                    </span>
-                    {!response.isStreaming && !response.error && <span className="text-xs text-emerald-600 dark:text-emerald-400">完成</span>}
-                  </header>
-                  <div className="max-h-[min(60vh,36rem)] min-h-[220px] overflow-y-auto p-3">
-                    <StreamingText
-                      text={response.responseText}
-                      reasoningText={response.reasoningText}
-                      isStreaming={response.isStreaming}
-                      error={response.error}
-                    />
-                  </div>
-                </article>
+                <ResponseCard
+                  key={endpoint.slug}
+                  title={endpoint.name}
+                  caption={endpoint.slug}
+                  attempts={[response]}
+                  layout={layout}
+                  isCollapsed={collapsedSlugs.has(endpoint.slug)}
+                  onToggleCollapse={() => setCollapsedSlugs((current) => {
+                    const next = new Set(current)
+                    if (next.has(endpoint.slug)) next.delete(endpoint.slug)
+                    else next.add(endpoint.slug)
+                    return next
+                  })}
+                />
               )
             })}
           </div>
         </section>
       )}
+
+      <div className="sticky bottom-0 z-20 -mx-1 mt-auto bg-gradient-to-t from-canvas from-70% to-transparent px-1 pb-3 pt-4 md:pb-4">
+        <DropZone
+          attachments={attachments}
+          onAdd={(attachment) => setAttachments((current) => [...current, attachment])}
+          onRemove={(id) => setAttachments((current) => current.filter((attachment) => attachment.id !== id))}
+          userInput={userInput}
+          onInputChange={(value) => {
+            setRunError(null)
+            setUserInput(value)
+          }}
+          onSend={handleCompare}
+          onStop={handleStop}
+          isSending={isSending}
+          placeholder="輸入要比較的問題…"
+          sendLabel="開始比較"
+          sendingLabel="比較中"
+          notice={runError}
+        />
+      </div>
     </div>
   )
 }

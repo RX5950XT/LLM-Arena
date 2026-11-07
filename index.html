@@ -3,10 +3,25 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/png" href="/llm-arena-logo.png" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f5f5" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121212" />
+    <link rel="icon" type="image/png" href="/llm-arena-mark.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;600&display=swap" />
     <title>LLM Arena - 大型語言模型競技場</title>
+    <script>
+      // 在畫面出現前決定主題，避免淺色使用者每次重新整理都閃一下深色
+      try {
+        var saved = localStorage.getItem('llm-arena-theme')
+        var dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
+        document.documentElement.classList.toggle('dark', dark)
+      } catch (e) {
+        document.documentElement.classList.add('dark')
+      }
+    </script>
   </head>
-  <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

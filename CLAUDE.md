@@ -11,7 +11,7 @@ LLM 模型評比與辯論平台。用戶可以並行比較多個 LLM 的回應�
 | 路由 | React Router 6（HashRouter） |
 | 狀態管理 | Zustand 5 |
 | 樣式 | Tailwind CSS 3 |
-| Markdown | react-markdown + rehype-highlight + KaTeX |
+| Markdown | react-markdown + rehype-highlight + KaTeX（樣式在 `globals.css` 的 `.md`，沒有 typography 外掛） |
 | 部署 | Vercel |
 
 ## 開發指令
@@ -28,11 +28,11 @@ npm run preview  # 預覽生產版本
 src/
 ├── components/
 │   ├── layout/         # MainLayout（含手機版 Sidebar 狀態）、Sidebar（手機 Drawer）
-│   ├── arena/          # 模型競技場頁面
+│   ├── arena/          # 模型競技場頁面、VerdictPanel（排行榜）
 │   ├── providers/      # OpenRouter 供應商比較頁面
-│   ├── debate/         # AI 辯論頁面
+│   ├── debate/         # AI 辯論頁面、DebateMatch（回合列）、JudgePanel（比分）
 │   ├── settings/       # 設定頁面
-│   └── shared/         # ModelSlot, MarkdownRenderer, StreamingText, DropZone
+│   └── shared/         # ModelSlot, ModelCombobox, ResponseCard, StreamingText, DropZone, MarkdownRenderer, controls, icons
 ├── services/           # API 客戶端、串流管理、辯論編排、檔案處理、標題生成
 ├── stores/             # Zustand stores（arena, debate, history, settings, theme）
 ├── types/              # TypeScript 型別定義
@@ -54,25 +54,32 @@ src/
 - `debate-pdf`：不新增依賴，使用既有 Markdown/KaTeX renderer 將辯論訊息與裁判回應排版為 A4 PDF，排除 reasoning
 - `settings-store`：保存模型清單與系統提示詞庫；`.txt`／`.md` 檔名作為提示詞名稱
 - 歷史紀錄：三個執行頁都在串流中即時寫入 localStorage，各 50 筆上限；圖片附件替換為 placeholder 節省空間
-- 主題：class-based dark mode（`document.documentElement.classList`）
+- 主題：class-based dark mode（`document.documentElement.classList`）；沒有存過偏好時跟隨系統，`index.html` 在首次繪製前套用避免閃爍
+- 設計 token：顏色一律用 `globals.css` 的 CSS 變數（`canvas`、`panel`、`ink`、`muted`、`accent`、`pro`、`con`…），由 `tailwind.config.ts` 對應成 Tailwind 色名，不再寫 `dark:` 雙份樣式；按鈕與欄位用 `.btn`、`.field`、`.panel` 等元件 class
+- `model-catalog`：第一次打開模型選單才抓 `{apiUrl}/models`，快取 6 小時；抓不到時退回常用模型與手動輸入
+- `lineup-memory`：送出時記住競技場與辯論陣容；`resetAll`／`reset`（新對話）只清問題與回覆，保留陣容
+- `score-parser`：從裁判 Markdown 讀分數；只信任明確的表格或分數句，讀不出來就回傳空值、畫面只顯示原文，不猜分數
+- `debate-pdf` 以 `plain` 模式呼叫 `MarkdownRenderer`（無複製按鈕、無 `.md` 樣式、無程式碼上色），PDF 排版只由 `PDF_CSS` 負責
 - Portal 渲染：ModelSlot 下拉清單使用 `createPortal` 避免 overflow 裁切
 - 中斷恢復：發送前將設定儲存於 localStorage（TTL 15 分鐘），重新整理後自動恢復並提示重新生成；強制暫停後保留輸入，可重新發送
 
 ## UI 功能
 
-- **生成動畫**：`StreamingText` 在等待第一個 token 時顯示旋轉 spinner；生成中顯示 spinner + "生成中" 標籤；生成完成後 2.5 秒內顯示 "✓ 完成" 標籤
-- **折疊回應**：競技場每個模型回應卡片可個別折疊/展開；辯論每回合訊息可折疊/展開
+- **生成狀態**：卡片頂端有滑動細線；`StreamingText` 等待時顯示骨架，生成中顯示即時計時，完成後保留總時間、首字時間、每秒字數與字數；時間只量畫面親眼看到的那次，中途切回來就不顯示
+- **折疊回應**：競技場與供應商比較每張回應卡片可個別折疊/展開，也可全部收合；辯論可折疊整個回合；收合時內容仍掛載，串流與計時不中斷
+- **陣容收合**：送出後設定區收合成一列摘要，可隨時展開編輯；輸入區固定在頁面底部
+- **錯誤訊息**：不使用 `alert`，驗證問題顯示在輸入區；`StreamingText` 把常見 HTTP 狀態碼轉成可行動的說明
 - **折疊推理**：OpenRouter 回傳 reasoning 時，`ReasoningDisclosure` 以原生 `<details>` 預設收起思考內容
 - **系統提示詞庫**：設定頁可批量拖入 `.txt`／`.md`，競技場與供應商比較的模型設定可直接套用
 - **統一提示詞**：競技場可把模型 A 的系統提示詞一鍵套用到全部模型；裁判模型不顯示提示詞庫
-- **重複回答與平均評分**：競技場每個模型可獨立嘗試同一問題 1–5 次，裁判逐次評分後依平均總分排名
+- **重複回答與平均評分**：競技場每個模型可獨立嘗試同一問題 1–5 次，以分頁切換；裁判逐次評分後依平均總分排名，名次標在卡片上
 - **背景執行與強制暫停**：三種執行都在同一分頁背景完成；`DropZone` 停止按鈕才會取消串流並阻擋舊回應污染新一輪
 - **辯論匯出**：辯論頁可選起始方；完成後下載支援 Markdown、表格和數學公式且不含 reasoning 的 PDF
 
 ## RWD 設計
 
 - `md`（768px）為主要斷點：手機版 Sidebar 為 Drawer 覆蓋層，桌面版為固定側欄
-- 手機版顯示頂部 Header（漢堡按鈕 + Logo）
+- 手機版顯示頂部 Header（漢堡按鈕 + Logo）；桌面版收起側欄時也用同一條 Header 展開
 - 各頁面 Grid 在手機版降為單欄，桌面版恢復多欄
 - 供應商比較頁在手機版將設定、供應商清單與回應卡片改為單欄，清單可獨立滑動
 - 設定頁的提示詞匯入區與提示詞清單在手機版維持單欄、可垂直閱讀

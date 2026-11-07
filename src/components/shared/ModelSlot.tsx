@@ -1,197 +1,141 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { createPortal } from 'react-dom'
+import { useState } from 'react'
 import { useSettingsStore } from '@/stores/settings-store'
+import { Icon } from './icons'
+import { ModelCombobox } from './ModelCombobox'
 
 interface ModelSlotProps {
   label: string
+  token?: React.ReactNode
   modelId: string
+  placeholder?: string
   systemPrompt: string
   reasoning?: boolean
   showPromptLibrary?: boolean
+  disabled?: boolean
+  compact?: boolean
   onModelIdChange: (value: string) => void
+  onModelPick?: (value: string) => void
+  onModelEnter?: () => void
   onSystemPromptChange: (value: string) => void
   onReasoningChange?: (value: boolean) => void
+  onRemove?: () => void
 }
 
-interface DropdownPos {
-  top: number
-  left: number
-  width: number
+function PromptLibrary({ label, systemPrompt, disabled, onChange }: {
+  label: string
+  systemPrompt: string
+  disabled?: boolean
+  onChange: (value: string) => void
+}): JSX.Element {
+  const systemPrompts = useSettingsStore((state) => state.systemPrompts)
+  const selectedId = systemPrompts.find((prompt) => prompt.content === systemPrompt)?.id ?? ''
+
+  if (systemPrompts.length === 0) {
+    return (
+      <a href="#/settings" className="inline-block text-xs text-accent-text underline underline-offset-2">
+        提示詞庫是空的，前往設定匯入
+      </a>
+    )
+  }
+  return (
+    <select
+      aria-label={`${label}提示詞庫`}
+      value={selectedId}
+      disabled={disabled}
+      onChange={(event) => {
+        const selected = systemPrompts.find((prompt) => prompt.id === event.target.value)
+        if (selected) onChange(selected.content)
+      }}
+      className="field"
+    >
+      <option value="">手動輸入</option>
+      {systemPrompts.map((prompt) => <option key={prompt.id} value={prompt.id}>{prompt.name}</option>)}
+    </select>
+  )
 }
 
 export function ModelSlot({
   label,
+  token,
   modelId,
+  placeholder,
   systemPrompt,
   reasoning = false,
   showPromptLibrary = false,
+  disabled,
+  compact,
   onModelIdChange,
+  onModelPick,
+  onModelEnter,
   onSystemPromptChange,
-  onReasoningChange
+  onReasoningChange,
+  onRemove
 }: ModelSlotProps): JSX.Element {
   const [showPrompt, setShowPrompt] = useState(false)
-  const [showDropdown, setShowDropdown] = useState(false)
-  const [dropdownPos, setDropdownPos] = useState<DropdownPos>({ top: 0, left: 0, width: 0 })
-  const modelList = useSettingsStore((s) => s.modelList)
-  const systemPrompts = useSettingsStore((s) => s.systemPrompts)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-
-  const filtered = modelId.trim()
-    ? modelList.filter((m) => m.toLowerCase().includes(modelId.toLowerCase()))
-    : modelList
-  const selectedPromptId = systemPrompts.find((prompt) => prompt.content === systemPrompt)?.id ?? ''
-
-  const updatePosition = useCallback(() => {
-    if (!inputRef.current) return
-    const rect = inputRef.current.getBoundingClientRect()
-    setDropdownPos({
-      top: rect.bottom + 4,
-      left: rect.left,
-      width: rect.width
-    })
-  }, [])
-
-  const openDropdown = useCallback(() => {
-    updatePosition()
-    setShowDropdown(true)
-  }, [updatePosition])
-
-  // Close on outside click
-  useEffect(() => {
-    if (!showDropdown) return
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node
-      if (inputRef.current?.contains(target)) return
-      if (dropdownRef.current?.contains(target)) return
-      setShowDropdown(false)
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [showDropdown])
-
-  // Update position on scroll/resize while open
-  useEffect(() => {
-    if (!showDropdown) return
-    const handleReposition = () => updatePosition()
-    window.addEventListener('scroll', handleReposition, true)
-    window.addEventListener('resize', handleReposition)
-    return () => {
-      window.removeEventListener('scroll', handleReposition, true)
-      window.removeEventListener('resize', handleReposition)
-    }
-  }, [showDropdown, updatePosition])
-
-  const handleSelect = (model: string): void => {
-    onModelIdChange(model)
-    setShowDropdown(false)
-    inputRef.current?.blur()
-  }
+  const hasPrompt = systemPrompt.trim().length > 0
+  const labelClass = compact ? 'sr-only' : 'sr-only sm:not-sr-only'
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider font-mono">
-          {label}
-        </span>
+    <div className="group min-w-0">
+      <div className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap">
+        {token}
+        <div className="min-w-0 flex-1 basis-[70%] sm:basis-auto">
+          <ModelCombobox
+            value={modelId}
+            disabled={disabled}
+            ariaLabel={`${label}的模型 ID`}
+            placeholder={placeholder}
+            onChange={onModelIdChange}
+            onPick={onModelPick}
+            onEnter={onModelEnter}
+          />
+        </div>
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
         <button
           type="button"
-          onClick={() => setShowPrompt(!showPrompt)}
+          onClick={() => setShowPrompt((current) => !current)}
           aria-expanded={showPrompt}
-          className="text-xs text-slate-400 hover:text-primary-500 dark:text-slate-500 dark:hover:text-primary-400 transition-colors cursor-pointer"
+          title={hasPrompt ? '系統提示詞（已設定）' : '系統提示詞（未設定）'}
+          className={`btn btn-ghost relative !px-2 ${showPrompt ? 'bg-sunken text-ink' : ''}`}
         >
-          {showPrompt ? '隱藏提示詞' : '系統提示詞'}
+          <Icon name="prompt" />
+          <span className={labelClass}>提示詞</span>
+          {hasPrompt && <span aria-hidden="true" className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-accent" />}
         </button>
         {onReasoningChange && (
           <button
             type="button"
             onClick={() => onReasoningChange(!reasoning)}
             aria-pressed={reasoning}
-            className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-md transition-colors cursor-pointer border ${
-              reasoning
-                ? 'bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400'
-                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400'
-            }`}
-            title={reasoning ? '推理模式已啟用' : '啟用推理模式'}
+            disabled={disabled}
+            title={reasoning ? '推理模式已開啟' : '開啟推理模式'}
+            className={`btn !px-2 ${reasoning ? 'bg-warn/15 text-warn hover:bg-warn/25' : 'btn-ghost'}`}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" />
-            </svg>
-            <span>推理</span>
+            <Icon name="bulb" />
+            <span className={labelClass}>推理</span>
           </button>
         )}
-      </div>
-      <input
-        ref={inputRef}
-        type="text"
-        value={modelId}
-        onChange={(e) => {
-          onModelIdChange(e.target.value)
-          openDropdown()
-        }}
-        onFocus={openDropdown}
-        placeholder="模型 ID（如 google/gemini-2.5-pro）"
-        className="w-full px-3 py-1.5 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-600 font-mono"
-      />
-      {showDropdown && filtered.length > 0 && createPortal(
-        <div
-          ref={dropdownRef}
-          style={{
-            position: 'fixed',
-            top: dropdownPos.top,
-            left: dropdownPos.left,
-            width: dropdownPos.width,
-            zIndex: 9999
-          }}
-          className="max-h-48 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-lg"
-        >
-          {filtered.map((model) => (
-            <button
-              key={model}
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => handleSelect(model)}
-              className="w-full text-left px-3 py-1.5 text-sm font-mono text-slate-700 dark:text-slate-300 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:text-primary-700 dark:hover:text-primary-300 transition-colors cursor-pointer"
-            >
-              {model}
-            </button>
-          ))}
-        </div>,
-        document.body
-      )}
-      {showPromptLibrary && (
-        <div className="space-y-1">
-          <label className="text-[11px] text-slate-500 dark:text-slate-400">提示詞庫</label>
-          <select
-            aria-label={`${label}提示詞庫`}
-            value={selectedPromptId}
-            disabled={systemPrompts.length === 0}
-            onChange={(e) => {
-              const selected = systemPrompts.find((prompt) => prompt.id === e.target.value)
-              if (selected) onSystemPromptChange(selected.content)
-            }}
-            className="w-full px-3 py-1.5 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-slate-800 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <option value="">{systemPrompts.length > 0 ? '手動輸入' : '尚未儲存系統提示詞'}</option>
-            {systemPrompts.map((prompt) => (
-              <option key={prompt.id} value={prompt.id}>{prompt.name}</option>
-            ))}
-          </select>
-          {systemPrompts.length === 0 && (
-            <a href="#/settings" className="inline-block text-[11px] text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
-              前往設定匯入提示詞 →
-            </a>
-          )}
+        {onRemove && (
+          <button type="button" onClick={onRemove} disabled={disabled} aria-label={`移除${label}`} title={`移除${label}`} className="icon-btn reveal">
+            <Icon name="close" />
+          </button>
+        )}
         </div>
-      )}
+      </div>
+
       {showPrompt && (
-        <div className="space-y-2">
+        <div className="card-enter mt-2 space-y-2 rounded-lg bg-sunken p-2.5">
+          {showPromptLibrary && (
+            <PromptLibrary label={label} systemPrompt={systemPrompt} disabled={disabled} onChange={onSystemPromptChange} />
+          )}
           <textarea
             value={systemPrompt}
-            onChange={(e) => onSystemPromptChange(e.target.value)}
-            placeholder="系統提示詞（可選）"
+            disabled={disabled}
+            onChange={(event) => onSystemPromptChange(event.target.value)}
+            aria-label={`${label}的系統提示詞`}
+            placeholder="系統提示詞（可不填）"
             rows={5}
-            className="w-full px-3 py-1.5 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all resize-y text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-600"
+            className="field field-area"
           />
         </div>
       )}

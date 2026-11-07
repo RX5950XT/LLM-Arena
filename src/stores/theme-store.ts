@@ -36,6 +36,8 @@ export function initTheme(): void {
   if (saved === 'light' || saved === 'dark') {
     useThemeStore.getState().setTheme(saved)
   } else {
-    applyTheme('dark')
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    useThemeStore.setState({ theme: prefersDark ? 'dark' : 'light' })
+    applyTheme(prefersDark ? 'dark' : 'light')
   }
 }

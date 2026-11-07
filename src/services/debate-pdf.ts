@@ -90,7 +90,8 @@ function escapeHtml(value: string): string {
 
 function renderMarkdown(content: string): string {
   return renderToStaticMarkup(React.createElement(MarkdownRenderer, {
-    content: content.trim() || '（沒有回應）'
+    content: content.trim() || '（沒有回應）',
+    plain: true
   }))
 }
 

@@ -1,13 +1,39 @@
-import { useMemo } from 'react'
+import { isValidElement, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
+import rehypeHighlight from 'rehype-highlight'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
+import { CopyButton } from './controls'
 
 interface MarkdownRendererProps {
   content: string
   className?: string
+  /** PDF 匯出用：不加互動按鈕、程式碼上色與畫面排版，由 PDF 自己的樣式負責 */
+  plain?: boolean
+}
+
+function nodeText(node: React.ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(nodeText).join('')
+  if (isValidElement<{ children?: React.ReactNode }>(node)) return nodeText(node.props.children)
+  return ''
+}
+
+function CodeBlock({ children }: { children?: React.ReactNode }): JSX.Element {
+  const code = Array.isArray(children) ? children[0] : children
+  const className = isValidElement<{ className?: string }>(code) ? code.props.className ?? '' : ''
+  const language = /language-([\w-]+)/.exec(className)?.[1]
+  return (
+    <div className="code-block">
+      <header>
+        <span>{language ?? '程式碼'}</span>
+        <CopyButton text={nodeText(children).replace(/\n$/, '')} label="複製程式碼" />
+      </header>
+      <pre>{children}</pre>
+    </div>
+  )
 }
 
 /**
@@ -94,49 +120,25 @@ function preRenderMath(text: string): string {
   return result
 }
 
-export function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps): JSX.Element {
+const TABLE_COMPONENT = {
+  table: ({ children }: { children?: React.ReactNode }) => (
+    <div className="table-wrap overflow-x-auto"><table>{children}</table></div>
+  )
+}
+
+const SCREEN_COMPONENTS = { ...TABLE_COMPONENT, pre: CodeBlock }
+const SCREEN_REHYPE = [rehypeRaw, rehypeHighlight]
+const PLAIN_REHYPE = [rehypeRaw]
+
+export function MarkdownRenderer({ content, className = '', plain = false }: MarkdownRendererProps): JSX.Element {
   const rendered = useMemo(() => preRenderMath(content), [content])
 
   return (
-    <div className={`prose prose-sm dark:prose-invert max-w-none ${className}`}>
+    <div className={`prose ${plain ? '' : 'md'} ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw]}
-        components={{
-          pre: ({ children }) => (
-            <pre className="bg-slate-100 dark:bg-slate-800/80 rounded-lg p-3 overflow-x-auto text-xs">
-              {children}
-            </pre>
-          ),
-          code: ({ children, className: codeClassName }) => {
-            const isInline = !codeClassName
-            if (isInline) {
-              return (
-                <code className="bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 rounded text-xs">
-                  {children}
-                </code>
-              )
-            }
-            return <code className={codeClassName}>{children}</code>
-          },
-          table: ({ children }) => (
-            <div className="overflow-x-auto">
-              <table className="border-collapse border border-slate-300 dark:border-slate-700">
-                {children}
-              </table>
-            </div>
-          ),
-          th: ({ children }) => (
-            <th className="border border-slate-300 dark:border-slate-700 px-3 py-1.5 bg-slate-50 dark:bg-slate-800/60 text-left text-xs font-medium">
-              {children}
-            </th>
-          ),
-          td: ({ children }) => (
-            <td className="border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs">
-              {children}
-            </td>
-          )
-        }}
+        rehypePlugins={plain ? PLAIN_REHYPE : SCREEN_REHYPE}
+        components={plain ? TABLE_COMPONENT : SCREEN_COMPONENTS}
       >
         {rendered}
       </ReactMarkdown>

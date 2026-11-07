@@ -28,6 +28,7 @@ function clampRepeatCount(count: number): number {
 
 interface ArenaActions {
   setSlotCount: (count: number) => void
+  removeSlot: (index: number) => void
   setRepeatCount: (count: number) => void
   updateSlot: (index: number, updates: Partial<ArenaSlot>) => void
   setAllSystemPrompts: (prompt: string) => void
@@ -81,6 +82,16 @@ export const useArenaStore = create<ArenaStore & ArenaActions>((set, get) => ({
       i < currentSlots.length ? currentSlots[i] : createSlot(i)
     )
     set({ slotCount: count, slots: newSlots })
+  },
+
+  removeSlot: (index) => {
+    set((state) => {
+      if (state.slots.length <= 1) return state
+      const slots = state.slots
+        .filter((_, i) => i !== index)
+        .map((slot, i) => ({ ...slot, id: `slot-${i}` }))
+      return { slots, slotCount: slots.length }
+    })
   },
 
   setRepeatCount: (count) => set({ repeatCount: clampRepeatCount(count) }),
@@ -175,14 +186,12 @@ export const useArenaStore = create<ArenaStore & ArenaActions>((set, get) => ({
     }))
   },
 
+  // 新對話只清問題與回覆，陣容留著，不必每次重選模型
   resetAll: () => {
     set((state) => ({
-      slots: Array.from({ length: state.slotCount }, (_, i) => createSlot(i)),
-      repeatCount: 1,
+      slots: state.slots.map((slot) => ({ ...slot, attempts: [createAttempt()] })),
       userInput: '',
       attachments: [],
-      judgeModelId: '',
-      judgeSystemPrompt: ARENA_JUDGE_DEFAULT_PROMPT,
       judgeResult: null,
       judgeReasoningText: '',
       isJudging: false,

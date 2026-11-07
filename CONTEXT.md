@@ -14,6 +14,14 @@
 - `/debate` 可選正方或反方先開始；`startingSide` 會進入辯論流程、恢復暫存與歷史紀錄，舊紀錄預設正方先開始。
 - 辯論裁判版面為前三位專科裁判同列，綜合裁判在下一列；`debate-pdf` 重用既有 Markdown/KaTeX renderer，以瀏覽器畫布產生 A4 PDF，依序輸出辯論訊息與裁判回應且排除 reasoning。
 
+## UI 架構（2026-11 改版）
+
+- 視覺基準：石墨配色，介面只用純灰階，顏色留給正反方與狀態；因為 `accent-text` 和 `ink` 同色，選取狀態不能只靠文字顏色區分。token 集中在 `src/styles/globals.css`；新元件用語意色名（`bg-panel`、`text-muted`…），不要再寫 `slate-*`、`dark:` 或 `primary-*`。
+- 正反方顏色 `pro`／`con` 已用 dataviz 驗證工具檢查兩個主題的色盲區分度與對比。
+- 三個執行頁共用同一個骨架：設定區（送出後收合成摘要）→ 結果 → 固定在底部的 `DropZone`。
+- 側邊欄依目前路由顯示該模式的歷史，`新對話` 保留陣容。
+- `.md` 只給畫面用；PDF 走 `plain` 模式，改 Markdown 樣式不會影響 PDF，改 `MarkdownRenderer` 的標記結構則要重新檢查 PDF。
+
 ## 驗證
 
 - `npm run build` 已通過（TypeScript 檢查與 Vite production build）。

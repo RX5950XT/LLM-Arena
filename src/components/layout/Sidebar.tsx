@@ -1,71 +1,26 @@
-import { useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Icon } from '@/components/shared/icons'
+import type { IconName } from '@/components/shared/icons'
 import { useThemeStore } from '@/stores/theme-store'
 import { useHistoryStore } from '@/stores/history-store'
 import { useArenaStore } from '@/stores/arena-store'
 import { useDebateStore } from '@/stores/debate-store'
 import { getArenaRunSnapshot, stopArenaRun } from '@/services/arena-runner'
 import { getDebateRunSnapshot, stopDebateRun } from '@/services/debate-runner'
-import { stopProviderRun } from '@/services/provider-runner'
+import { isProviderRunActive, stopProviderRun } from '@/services/provider-runner'
 import type { ArenaHistoryEntry, DebateHistoryEntry, ProviderHistoryEntry } from '@/types/history'
 
-function IconArena(): JSX.Element {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z" />
-    </svg>
-  )
-}
+type HistoryType = 'arena' | 'debate' | 'provider'
+type HistoryEntry = ArenaHistoryEntry | DebateHistoryEntry | ProviderHistoryEntry
 
-function IconDebate(): JSX.Element {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0 0 11.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
-    </svg>
-  )
-}
-
-function IconProviders(): JSX.Element {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 4.5v15m10.5-15v15" />
-    </svg>
-  )
-}
-
-function IconSettings(): JSX.Element {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-    </svg>
-  )
-}
-
-function IconSun(): JSX.Element {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />
-    </svg>
-  )
-}
-
-function IconMoon(): JSX.Element {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" />
-    </svg>
-  )
-}
-
-function IconPlus(): JSX.Element {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-    </svg>
-  )
-}
+const NAV_ITEMS: Array<{ to: string; label: string; icon: IconName; type: HistoryType }> = [
+  { to: '/', label: '模型競技場', icon: 'arena', type: 'arena' },
+  { to: '/debate', label: 'AI 辯論', icon: 'debate', type: 'debate' },
+  { to: '/providers', label: '供應商比較', icon: 'providers', type: 'provider' }
+]
+const SEARCH_MIN_ENTRIES = 6
+const DELETE_CONFIRM_MS = 3000
 
 function formatRelativeTime(timestamp: number): string {
   const diff = Date.now() - timestamp
@@ -79,37 +34,108 @@ function formatRelativeTime(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString('zh-TW')
 }
 
-interface HistoryListProps {
-  type: 'arena' | 'debate' | 'provider'
-  onClose: () => void
+function groupLabel(timestamp: number, now: Date): string {
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const dayMs = 86400000
+  if (timestamp >= startOfToday) return '今天'
+  if (timestamp >= startOfToday - dayMs) return '昨天'
+  if (timestamp >= startOfToday - dayMs * 7) return '這週'
+  return '更早'
 }
 
-function HistoryList({ type, onClose }: HistoryListProps): JSX.Element {
+function groupEntries(entries: HistoryEntry[]): Array<{ label: string; entries: HistoryEntry[] }> {
+  const now = new Date()
+  return entries.reduce<Array<{ label: string; entries: HistoryEntry[] }>>((groups, entry) => {
+    const label = groupLabel(entry.updatedAt, now)
+    const last = groups[groups.length - 1]
+    if (last?.label === label) return [...groups.slice(0, -1), { label, entries: [...last.entries, entry] }]
+    return [...groups, { label, entries: [entry] }]
+  }, [])
+}
+
+function isEntryLive(type: HistoryType, id: string): boolean {
+  if (type === 'arena') return Boolean(getArenaRunSnapshot(id))
+  if (type === 'debate') return Boolean(getDebateRunSnapshot(id))
+  return isProviderRunActive(id)
+}
+
+function HistoryRow({ entry, isActive, isLive, onLoad, onDelete }: {
+  entry: HistoryEntry
+  isActive: boolean
+  isLive: boolean
+  onLoad: () => void
+  onDelete: () => void
+}): JSX.Element {
+  const [isConfirming, setIsConfirming] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+  }, [])
+
+  const handleDelete = (): void => {
+    if (isConfirming) {
+      onDelete()
+      return
+    }
+    setIsConfirming(true)
+    timerRef.current = setTimeout(() => setIsConfirming(false), DELETE_CONFIRM_MS)
+  }
+
+  return (
+    <li className={`group relative rounded-lg transition-colors duration-150 ${isActive ? 'bg-accent/10' : 'hover:bg-panel'}`}>
+      <button type="button" onClick={onLoad} aria-current={isActive ? 'true' : undefined} className="block w-full cursor-pointer rounded-lg py-1.5 pl-2.5 pr-8 text-left">
+        <span className={`flex items-center gap-1.5 text-[13px] leading-snug ${isActive ? 'font-medium text-ink' : 'text-muted'}`}>
+          {isLive && <span className="live-dot" title="生成中" />}
+          <span className="truncate" title={entry.title}>{entry.title}</span>
+        </span>
+        <span className="mt-0.5 block text-[11px] leading-none text-faint">{formatRelativeTime(entry.updatedAt)}</span>
+      </button>
+      <button
+        type="button"
+        onClick={handleDelete}
+        aria-label={isConfirming ? `確定刪除 ${entry.title}` : `刪除 ${entry.title}`}
+        title={isConfirming ? '再按一次確定刪除' : '刪除此紀錄'}
+        className={`absolute right-1 top-1/2 -translate-y-1/2 ${
+          isConfirming
+            ? 'btn btn-danger !h-6 !px-1.5 !text-[11px]'
+            : 'icon-btn reveal !h-6 !w-6 hover:!text-danger'
+        }`}
+      >
+        {isConfirming ? '確定？' : <Icon name="close" className="h-3.5 w-3.5" />}
+      </button>
+    </li>
+  )
+}
+
+function HistoryPanel({ type, onClose }: { type: HistoryType; onClose: () => void }): JSX.Element {
   const navigate = useNavigate()
   const historyStore = useHistoryStore()
-  const arenaStore = useArenaStore()
-  const debateStore = useDebateStore()
-  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
 
-  const history = type === 'arena'
+  const history: HistoryEntry[] = type === 'arena'
     ? historyStore.arenaHistory
     : type === 'debate' ? historyStore.debateHistory : historyStore.providerHistory
   const activeId = type === 'arena'
     ? historyStore.activeArenaId
     : type === 'debate' ? historyStore.activeDebateId : historyStore.activeProviderId
+  const filtered = useMemo(() => {
+    const term = query.trim().toLowerCase()
+    return term ? history.filter((entry) => entry.title.toLowerCase().includes(term)) : history
+  }, [history, query])
 
-  const handleLoad = (entry: ArenaHistoryEntry | DebateHistoryEntry | ProviderHistoryEntry): void => {
+  const handleLoad = (entry: HistoryEntry): void => {
     if (type === 'arena') {
       historyStore.setActiveArenaId(entry.id)
       const snapshot = getArenaRunSnapshot(entry.id)
       if (snapshot) useArenaStore.setState(snapshot)
-      else arenaStore.restoreFromHistory(entry as ArenaHistoryEntry)
+      else useArenaStore.getState().restoreFromHistory(entry as ArenaHistoryEntry)
       navigate('/')
     } else if (type === 'debate') {
       historyStore.setActiveDebateId(entry.id)
       const snapshot = getDebateRunSnapshot(entry.id)
       if (snapshot) useDebateStore.setState(snapshot)
-      else debateStore.restoreFromHistory(entry as DebateHistoryEntry)
+      else useDebateStore.getState().restoreFromHistory(entry as DebateHistoryEntry)
       navigate('/debate')
     } else {
       historyStore.setActiveProviderId(entry.id)
@@ -120,11 +146,11 @@ function HistoryList({ type, onClose }: HistoryListProps): JSX.Element {
 
   const handleNewSession = (): void => {
     if (type === 'arena') {
-      arenaStore.resetAll()
+      useArenaStore.getState().resetAll()
       historyStore.setActiveArenaId(null)
       navigate('/')
     } else if (type === 'debate') {
-      debateStore.reset()
+      useDebateStore.getState().reset()
       historyStore.setActiveDebateId(null)
       navigate('/debate')
     } else {
@@ -134,8 +160,7 @@ function HistoryList({ type, onClose }: HistoryListProps): JSX.Element {
     onClose()
   }
 
-  const handleDelete = (e: React.MouseEvent, id: string): void => {
-    e.stopPropagation()
+  const handleDelete = (id: string): void => {
     if (type === 'arena') {
       stopArenaRun(id)
       historyStore.deleteArena(id)
@@ -149,220 +174,117 @@ function HistoryList({ type, onClose }: HistoryListProps): JSX.Element {
   }
 
   return (
-    <div className="mt-1 mb-1.5">
-      {/* 新對話按鈕 */}
-      <button
-        type="button"
-        onClick={handleNewSession}
-        className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs font-medium text-primary-600 dark:text-primary-400 hover:bg-primary-500/5 dark:hover:bg-primary-500/5 transition-colors cursor-pointer"
-        title="清除目前載入的紀錄，開始新對話"
-      >
-        <span className="shrink-0"><IconPlus /></span>
-        <span>新對話</span>
-      </button>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="space-y-1.5 px-2 pb-2">
+        <button type="button" onClick={handleNewSession} title="清空問題與回覆，保留目前陣容" className="btn btn-outline w-full !justify-start bg-panel">
+          <Icon name="plus" />
+          新對話
+        </button>
+        {history.length >= SEARCH_MIN_ENTRIES && (
+          <div className="relative">
+            <Icon name="search" className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜尋紀錄"
+              aria-label="搜尋歷史紀錄"
+              className="field !h-8 !bg-transparent pl-8"
+            />
+          </div>
+        )}
+      </div>
 
-      {/* 歷史項目 */}
-      {history.length === 0 ? (
-        <p className="text-[11px] text-slate-400 dark:text-slate-600 text-center py-3">
-          尚無歷史紀錄
-        </p>
-      ) : (
-        <ul className="mt-0.5 space-y-px">
-          {history.map((entry) => (
-            <li
-              key={entry.id}
-              className={`group flex items-center gap-1.5 pl-5 pr-2 py-1.5 rounded-lg cursor-pointer transition-colors ${
-                entry.id === activeId
-                  ? 'bg-primary-500/10'
-                  : 'hover:bg-slate-200/60 dark:hover:bg-slate-800/60'
-              }`}
-              onMouseEnter={() => setHoveredId(entry.id)}
-              onMouseLeave={() => setHoveredId(null)}
-              onClick={() => handleLoad(entry)}
-            >
-              {/* 左邊指示線 */}
-              <div className={`w-0.5 self-stretch rounded-full shrink-0 ${
-                entry.id === activeId
-                  ? 'bg-primary-500'
-                  : 'bg-slate-300 dark:bg-slate-700'
-              }`} />
-              <div className="flex-1 min-w-0 pl-1.5">
-                <p className={`text-xs truncate leading-snug ${
-                  entry.id === activeId
-                    ? 'font-medium text-primary-700 dark:text-primary-300'
-                    : 'text-slate-600 dark:text-slate-400'
-                }`}>
-                  {entry.title}
-                </p>
-                <p className="text-[10px] text-slate-400 dark:text-slate-600 mt-0.5 leading-none">
-                  {formatRelativeTime(entry.updatedAt)}
-                </p>
-              </div>
-              {hoveredId === entry.id && (
-                <button
-                  type="button"
-                  onClick={(e) => handleDelete(e, entry.id)}
-                  className="shrink-0 p-0.5 text-slate-400 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-colors cursor-pointer"
-                  title="刪除此紀錄"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {/* 筆數資訊 */}
-      {history.length > 0 && (
-        <p className="text-[10px] text-slate-400 dark:text-slate-600 pl-5 pt-1.5">
-          {history.length} / 50
-        </p>
-      )}
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        {history.length === 0 && <p className="px-2.5 py-2 text-xs leading-relaxed text-faint">送出第一個問題後，紀錄會出現在這裡。</p>}
+        {history.length > 0 && filtered.length === 0 && <p className="px-2.5 py-2 text-xs text-faint">找不到符合「{query}」的紀錄</p>}
+        {groupEntries(filtered).map((group) => (
+          <div key={group.label} className="mb-2">
+            <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-faint">{group.label}</p>
+            <ul className="space-y-px">
+              {group.entries.map((entry) => (
+                <HistoryRow
+                  key={entry.id}
+                  entry={entry}
+                  isActive={entry.id === activeId}
+                  isLive={isEntryLive(type, entry.id)}
+                  onLoad={() => handleLoad(entry)}
+                  onDelete={() => handleDelete(entry.id)}
+                />
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
 
 interface SidebarProps {
   isOpen: boolean
+  isCollapsed: boolean
   onClose: () => void
+  onCollapse: () => void
 }
 
-export function Sidebar({ isOpen, onClose }: SidebarProps): JSX.Element {
-  const { theme, toggleTheme } = useThemeStore()
-  const [expanded, setExpanded] = useState<'arena' | 'debate' | 'provider' | null>(null)
+function navClass({ isActive }: { isActive: boolean }): string {
+  return `flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium transition-colors duration-150 ${
+    isActive ? 'bg-accent/15 text-accent-text' : 'text-muted hover:bg-panel hover:text-ink'
+  }`
+}
 
-  const toggleExpanded = (type: 'arena' | 'debate' | 'provider'): void => {
-    setExpanded((prev) => (prev === type ? null : type))
-  }
+export function Sidebar({ isOpen, isCollapsed, onClose, onCollapse }: SidebarProps): JSX.Element {
+  const { theme, toggleTheme } = useThemeStore()
+  const { pathname } = useLocation()
+  const [lastType, setLastType] = useState<HistoryType>('arena')
+  const routeType = NAV_ITEMS.find((item) => item.to === pathname)?.type
+
+  useEffect(() => {
+    if (routeType) setLastType(routeType)
+  }, [routeType])
 
   return (
     <aside className={`
-      fixed md:relative inset-y-0 left-0 z-40
-      w-52 shrink-0
-      bg-slate-100 dark:bg-slate-900
-      border-r border-slate-200 dark:border-slate-800
-      flex flex-col
-      transition-transform duration-300 ease-in-out
+      fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 flex-col border-r border-line bg-sunken
+      transition-transform duration-200 ease-out md:relative
       ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      ${isCollapsed ? 'md:hidden' : ''}
     `}>
-      {/* Logo */}
-      <div className="px-4 py-5 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-center gap-2">
-          <img src="/llm-arena-logo.png" alt="" aria-hidden="true" className="w-6 h-6 rounded-md bg-white p-0.5 object-contain shrink-0" />
-          <h1 className="text-sm font-semibold text-slate-900 dark:text-slate-100 font-mono tracking-tight">
-            LLM Arena
-          </h1>
-        </div>
-        <p className="text-xs text-slate-500 dark:text-slate-500 mt-2 leading-relaxed">
-          大型語言模型競技場
-        </p>
+      <div className="flex items-center gap-2 px-3 py-3">
+        <img src="/llm-arena-mark.png" alt="" aria-hidden="true" className="h-7 w-7 shrink-0 rounded-lg bg-white object-contain p-0.5" />
+        <h1 className="flex-1 text-sm font-semibold">LLM Arena</h1>
+        <button type="button" onClick={onCollapse} aria-label="收起側欄" title="收起側欄" className="icon-btn hidden md:inline-flex">
+          <Icon name="panel" />
+        </button>
+        <button type="button" onClick={onClose} aria-label="關閉選單" className="icon-btn md:hidden">
+          <Icon name="close" />
+        </button>
       </div>
 
-      {/* 導覽列 */}
-      <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-        {/* 模型競技場 */}
-        <div>
-          <NavLink
-            to="/"
-            end
-            onClick={() => toggleExpanded('arena')}
-            className={({ isActive }) =>
-              `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-                isActive
-                  ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
-              }`
-            }
-          >
-            <span className="shrink-0"><IconArena /></span>
-            <span className="flex-1">模型競技場</span>
-            <span className="shrink-0 p-0.5 text-slate-400 dark:text-slate-600">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className={`w-3 h-3 transition-transform duration-200 ${expanded === 'arena' ? 'rotate-180' : ''}`}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-              </svg>
-            </span>
+      <nav aria-label="主要功能" className="space-y-0.5 px-2 pb-3">
+        {NAV_ITEMS.map((item) => (
+          <NavLink key={item.to} to={item.to} end onClick={onClose} className={navClass}>
+            <Icon name={item.icon} />
+            {item.label}
           </NavLink>
-          {expanded === 'arena' && <HistoryList type="arena" onClose={onClose} />}
-        </div>
-
-        {/* AI 辯論 */}
-        <div>
-          <NavLink
-            to="/debate"
-            onClick={() => toggleExpanded('debate')}
-            className={({ isActive }) =>
-              `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-                isActive
-                  ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
-              }`
-            }
-          >
-            <span className="shrink-0"><IconDebate /></span>
-            <span className="flex-1">AI 辯論</span>
-            <span className="shrink-0 p-0.5 text-slate-400 dark:text-slate-600">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className={`w-3 h-3 transition-transform duration-200 ${expanded === 'debate' ? 'rotate-180' : ''}`}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-              </svg>
-            </span>
-          </NavLink>
-          {expanded === 'debate' && <HistoryList type="debate" onClose={onClose} />}
-        </div>
-
-        {/* 供應商比較 */}
-        <NavLink
-          to="/providers"
-          onClick={() => toggleExpanded('provider')}
-          className={({ isActive }) =>
-            `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-              isActive
-                ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
-            }`
-          }
-        >
-          <span className="shrink-0"><IconProviders /></span>
-          <span className="flex-1">供應商比較</span>
-          <span className="shrink-0 p-0.5 text-slate-400 dark:text-slate-600">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className={`w-3 h-3 transition-transform duration-200 ${expanded === 'provider' ? 'rotate-180' : ''}`}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-            </svg>
-          </span>
-          </NavLink>
-        {expanded === 'provider' && <HistoryList type="provider" onClose={onClose} />}
-
-        {/* 分隔線 */}
-        <div className="!my-2 border-t border-slate-200 dark:border-slate-800" />
-
-        {/* 設定 */}
-        <NavLink
-          to="/settings"
-          onClick={onClose}
-          className={({ isActive }) =>
-            `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-              isActive
-                ? 'bg-primary-500/10 text-primary-600 dark:text-primary-400'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
-            }`
-          }
-        >
-          <span className="shrink-0"><IconSettings /></span>
-          <span>設定</span>
-        </NavLink>
+        ))}
       </nav>
 
-      {/* 主題切換 */}
-      <div className="p-2 border-t border-slate-200 dark:border-slate-800">
+      <HistoryPanel type={routeType ?? lastType} onClose={onClose} />
+
+      <div className="flex items-center gap-1 border-t border-line p-2">
+        <NavLink to="/settings" onClick={onClose} className={(state) => `${navClass(state)} flex-1`}>
+          <Icon name="settings" />
+          設定
+        </NavLink>
         <button
           type="button"
           onClick={toggleTheme}
-          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-slate-500 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-300 transition-colors cursor-pointer"
+          aria-label={theme === 'dark' ? '切換到淺色模式' : '切換到深色模式'}
+          title={theme === 'dark' ? '切換到淺色模式' : '切換到深色模式'}
+          className="icon-btn !h-9 !w-9"
         >
-          <span className="shrink-0">{theme === 'dark' ? <IconSun /> : <IconMoon />}</span>
-          <span>{theme === 'dark' ? '淺色模式' : '深色模式'}</span>
+          <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
         </button>
       </div>
     </aside>

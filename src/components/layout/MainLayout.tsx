@@ -1,39 +1,56 @@
 import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
+import { Icon } from '@/components/shared/icons'
 import { Sidebar } from './Sidebar'
+
+const COLLAPSED_KEY = 'llm-arena-sidebar-collapsed'
+
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
 
 export function MainLayout(): JSX.Element {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [collapsed, setCollapsedState] = useState(readCollapsed)
+
+  const setCollapsed = (next: boolean): void => {
+    setCollapsedState(next)
+    try {
+      localStorage.setItem(COLLAPSED_KEY, next ? '1' : '0')
+    } catch (error) {
+      console.warn('側欄狀態儲存失敗', error)
+    }
+  }
+
+  const handleMenuClick = (): void => {
+    if (window.matchMedia('(min-width: 768px)').matches) setCollapsed(false)
+    else setSidebarOpen(true)
+  }
 
   return (
     <div className="flex h-dvh overflow-hidden">
-      {/* 手機版遮罩 */}
       {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/40 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
+        <div className="fixed inset-0 z-30 bg-black/50 md:hidden" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
       )}
 
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar
+        isOpen={sidebarOpen}
+        isCollapsed={collapsed}
+        onClose={() => setSidebarOpen(false)}
+        onCollapse={() => setCollapsed(true)}
+      />
 
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* 手機版頂部 Header */}
-        <div className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 shrink-0">
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(true)}
-            className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-            aria-label="開啟選單"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-            </svg>
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className={`${collapsed ? 'flex' : 'flex md:hidden'} shrink-0 items-center gap-2 border-b border-line bg-sunken px-2 py-1.5`}>
+          <button type="button" onClick={handleMenuClick} aria-label="開啟選單" title="開啟選單" className="icon-btn">
+            <Icon name="menu" className="h-5 w-5" />
           </button>
-          <div className="flex items-center gap-2">
-            <img src="/llm-arena-logo.png" alt="" aria-hidden="true" className="w-5 h-5 rounded-md bg-white p-0.5 object-contain shrink-0" />
-            <span className="text-sm font-semibold text-slate-900 dark:text-slate-100 font-mono tracking-tight">LLM Arena</span>
-          </div>
+          <img src="/llm-arena-mark.png" alt="" aria-hidden="true" className="h-6 w-6 shrink-0 rounded-md bg-white object-contain p-0.5" />
+          <span className="text-sm font-semibold">LLM Arena</span>
         </div>
 
         <div className="flex-1 overflow-y-auto">
