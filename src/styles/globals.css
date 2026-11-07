@@ -160,6 +160,10 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .segment {
+    @apply min-w-7;
+  }
+
   /* 只在滑鼠環境靠 hover 顯示；觸控裝置永遠看得到 */
   .reveal {
     @apply opacity-0 transition-opacity duration-150 focus-visible:opacity-100 group-hover:opacity-100;
@@ -188,6 +192,30 @@
 
     .field-area {
       height: auto;
+    }
+
+    .segment {
+      min-width: 2.5rem;
+    }
+
+    /* 有些按鈕為了版面刻意做小；可點範圍撐到 44px，畫面大小不變。overflow hidden 的元素撐不開 */
+    .icon-btn, .btn, .tap {
+      position: relative;
+    }
+
+    .icon-btn::after, .btn::after, .tap::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+      transform: translate(-50%, -50%);
+    }
+
+    /* 分段按鈕彼此緊貼，只往上下撐，不蓋到隔壁 */
+    .segment::after {
+      width: 100%;
     }
   }
 

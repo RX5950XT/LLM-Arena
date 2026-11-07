@@ -226,7 +226,7 @@ function GhostResults({ modelIds, onPickSample }: { modelIds: string[]; onPickSa
       <div className="flex flex-wrap items-center gap-2 pt-1">
         <span className="text-[13px] text-muted">同一個問題同時問所有模型。試試看：</span>
         {SAMPLE_PROMPTS.map((prompt) => (
-          <button key={prompt} type="button" onClick={() => onPickSample(prompt)} className="max-w-full cursor-pointer truncate rounded-full border border-line px-3 py-1 text-xs text-muted transition-colors duration-150 hover:border-line-strong hover:text-ink">
+          <button key={prompt} type="button" onClick={() => onPickSample(prompt)} className="max-w-full cursor-pointer truncate rounded-full border border-line px-3 py-2.5 text-xs sm:py-1 text-muted transition-colors duration-150 hover:border-line-strong hover:text-ink">
             {prompt}
           </button>
         ))}

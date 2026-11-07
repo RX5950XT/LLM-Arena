@@ -215,7 +215,7 @@ export function DebateRounds(): JSX.Element {
               type="button"
               onClick={() => toggleRound(round)}
               aria-expanded={!isCollapsed}
-              className="mb-2 flex cursor-pointer items-center gap-1.5 text-[13px] font-medium text-muted transition-colors duration-150 hover:text-ink"
+              className="tap mb-2 flex cursor-pointer items-center gap-1.5 text-[13px] font-medium text-muted transition-colors duration-150 hover:text-ink"
             >
               <Icon name="chevronDown" className={`h-3.5 w-3.5 transition-transform duration-150 ${isCollapsed ? '-rotate-90' : ''}`} />
               第 {round} 回合

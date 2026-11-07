@@ -353,6 +353,8 @@ export function ProviderComparisonPage(): JSX.Element {
               type="button"
               onClick={() => void loadEndpoints(modelId)}
               disabled={isLoadingEndpoints || isSending || !modelId.trim()}
+              aria-label={isLoadingEndpoints ? '查詢中' : '查詢供應商'}
+              title={isLoadingEndpoints ? '查詢中' : '查詢供應商'}
               className="btn btn-outline"
             >
               {isLoadingEndpoints ? <Spinner /> : <Icon name="search" />}

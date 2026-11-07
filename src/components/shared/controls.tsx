@@ -31,7 +31,7 @@ export function Segmented<T extends string>({ label, value, options, disabled, o
             title={option.title}
             disabled={disabled}
             onClick={() => onChange(option.value)}
-            className={`inline-flex h-7 min-w-7 cursor-pointer items-center justify-center gap-1 rounded-md px-2 text-xs font-medium transition-colors duration-150 disabled:cursor-not-allowed ${
+            className={`tap segment inline-flex h-7 cursor-pointer items-center justify-center gap-1 rounded-md px-2 text-xs font-medium transition-colors duration-150 disabled:cursor-not-allowed ${
               selected ? 'bg-raised text-ink shadow-sm' : 'text-muted hover:text-ink'
             }`}
           >
