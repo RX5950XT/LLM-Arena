@@ -1,202 +1,34 @@
-# 工作計畫
+# LLM Arena todo
+最後更新：2026-11-19
 
-## 本次需求：新增 LLM Arena 品牌 logo
+技術棧、目錄、架構重點與 UI 功能見 `CLAUDE.md`；對外說明見 `README.md`。本檔只放交接重點。
 
-- [x] 產生適合 favicon 與 20–24px header 的簡潔幾何 logo
-- [x] 將 logo 接到 Sidebar、手機版 Header 與 `index.html` favicon
-- [x] 執行 build 與瀏覽器資產讀取驗證
+## 現況（交接）
+- 三種模式：競技場（`/`，1–15 模型、每模型重複 1–5 次、裁判逐次評分取平均）、供應商比較（`/providers`，1 家以上）、辯論（`/debate`，可選起始方、三專科裁判＋綜合裁判、PDF 匯出）。
+- 供應商比較：先查 `/models/{author}/{slug}/endpoints`，再以 `provider.only` 鎖定單一 provider，避免 fallback 到別家。
+- SSE 同時解析 `delta.content`、`delta.reasoning`、`delta.reasoning_content`、`delta.reasoning_details`；reasoning 用原生 `<details>` 預設收起，不進 PDF。
+- 背景執行：`arena-runner`／`provider-runner`／`debate-runner` 在頁面外，以 `historyId` 分離狀態；切換路由或對話只換畫面投影，只有停止按鈕或刪除紀錄會取消。`DebateOrchestrator` 用自己的 `DebateState`，不要讀全域狀態。
+- 歷史：三頁串流中即時寫入 localStorage；新欄位（reasoning、`repeatCount`、`startingSide`）一律 optional 讀取，舊紀錄要能恢復。
+- 裁判資料：競技場裁判逐模型收到系統提示詞、使用者問題與回答，候選內容明確當資料；裁判不顯示提示詞庫。
 
-## 本次需求回顧
+## 關鍵決策與踩雷
+- 視覺：石墨配色，介面純灰階，顏色只給正反方（`pro`／`con`，已驗證色盲區分與對比）與狀態。`accent-text` 與 `ink` 同色，選取狀態不能只靠文字顏色。新元件用語意色名，不寫 `slate-*`、`dark:`、`primary-*`。
+- 三個執行頁同一骨架：設定區（送出後收合）→ 結果 → 底部固定 `DropZone`（含強制暫停）。
+- 安全：API Key 在 localStorage，模型回應一律不可信。曾實測 `<iframe srcdoc>` 讀得到金鑰；規則見 `MarkdownRenderer.tsx` 的 `SANITIZE_SCHEMA`。`rehype-highlight` 必須排在過濾之後，否則 class 被清掉。
+- CSP 在 `vercel.json`（第二層防護）；開發伺服器不套用，驗證要用 production build 帶同樣 header。Playwright `wait_for_function` 字串寫法會被 CSP 擋，屬測試工具限制。
+- `.md` 樣式只給畫面；PDF 走 `plain` 模式。改 Markdown 樣式不影響 PDF，但改 `MarkdownRenderer` 的標記結構要重驗 PDF。
+- PDF 要實際渲染檢查（`pdftoppm`）；Canvas 與 PDF 座標方向不同，只看下載成功不夠。
+- 驗證維持最小必要：一次 build、一次端到端 smoke、一次輸出檢查，不重跑已完成的舊流程。
 
-- 使用 `imagegen` 產生透明背景的幾何 logo，複用於桌面 Sidebar、手機版 Header 與 favicon。
-- `npm run build` 通過（exit code `0`）；`git diff --check` 通過。
-- Playwright 桌面／手機截圖可見 logo；兩個圖片元素均載入完成（natural size `1254×1254`），favicon URL 為 `/llm-arena-logo.png`。
+## 驗證基準
+- `npm test`（vitest，公式解析與 HTML 過濾；拿掉過濾或程式碼判斷會失敗）。
+- `npm run build`（`tsc -b` + Vite production build）、`git diff --check`。
+- UI 用 Playwright mock 串流驗證。
 
-# 本次需求：程式檢查、清理、提交與部署
+## 待辦
+- 目前無未完成項目。
 
-- [x] 檢查目前程式與 Git 變更，確認沒有明顯錯誤或敏感資料
-- [x] 清理已確認的產物／垃圾，補齊必要的 Git 排除規則
-- [x] 以一次 build 和一次 diff／狀態檢查驗收
-- [x] 提交並推送到 `origin/main`
-- [x] 查看部署狀態並記錄結果
-
-## 本次需求回顧
-
-- 檢查 staged 清單與密鑰掃描，未提交 `dist`、`node_modules`、`.vercel`、`.vscode` 或測試輸出；移除追蹤中的 `tsconfig.tsbuildinfo`，並補上產物排除規則。
-- `npm run build` 通過，exit code `0`；`git diff --cached --check` 通過。
-- commit `68f6630` 已推送至 `origin/main`；Vercel Production 部署 `https://llm-arena-dr85og7mq-rx5950xts-projects.vercel.app` 狀態為 `Ready`。
-- 保留既有 Browserslist 資料過期與 bundle 超過 500 kB 的非阻塞警告，這次不為警告擴大修改範圍。
-
-## 本次需求：切換對話後仍在背景完成
-
-- [x] 將競技場串流與裁判流程移到頁面外的執行狀態
-- [x] 將辯論 orchestrator 改為獨立狀態，切換對話不再中止
-- [x] 將供應商比較串流移到頁面外，返回時同步即時結果
-- [x] 只驗證一次 build 與一次最小切換中途／完成 smoke
-
-## 本次需求回顧
-
-- 三種模式以 `historyId` 在頁面外保存背景執行狀態；切換路由或歷史紀錄只切換畫面投影，停止按鈕與刪除紀錄才會取消執行。
-- `DebateOrchestrator` 改為使用自己的 `DebateState`，避免載入其他對話後讀錯全域狀態；三種串流都持續寫入指定歷史。
-- 驗證：`npm run build` exit code `0`；Playwright 延遲 mock 下，供應商、競技場、辯論離開頁面後都能完成，分別讀回完成回應、完成回應、3 回合 6 則訊息。
-- 已知範圍：只保證同一瀏覽器分頁；重新整理或關閉分頁會中斷網路請求，但已保存部分仍在歷史中。
-
-## 本次需求：歷史保存與 PDF 匯出
-
-- [x] 讓供應商比較使用歷史紀錄，且串流中即時保存
-- [x] 切換對話後可恢復執行中的供應商／其他對話畫面
-- [x] 競技場模型數量下限改為 1
-- [x] PDF 排除 reasoning，並支援 Markdown、數學公式與表格
-- [x] 執行 build、資料流測試與瀏覽器／PDF 實際驗證
-
-## 本次需求回顧
-
-- 三個執行頁共用 `history-store` 保存完整設定、串流內容與目前狀態；側邊欄新增供應商歷史紀錄。
-- 切換對話時取消舊請求並保存已收到內容，返回時由歷史紀錄恢復畫面。
-- 競技場下限改為 1；辯論 PDF 重用既有 Markdown/KaTeX renderer，reasoning 只留在畫面與歷史，不放進 PDF。
-- 驗證：`npm run build`、`git diff --check`、Playwright mock 串流／切換／PDF 下載與 `pdftoppm` 視覺檢查通過。
-
-- [x] 追蹤 OpenRouter reasoning 與 provider routing 的資料流
-- [x] 保存並顯示 reasoning，讓思考內容可折疊
-- [x] 新增 OpenRouter 供應商查詢與多供應商比較頁
-- [x] 加入側邊欄路由與手機版排版
-- [x] 執行 TypeScript/build 與瀏覽器互動驗證
-
-## 回顧
-
-- 用既有 `OpenRouterClient` 與 `StreamingManager` 擴充，沒有新增依賴。
-- 使用 native `<details>` 收起 reasoning，並以 `provider.only` 確保比較結果不會被 fallback 到別的供應商。
-- UI 驗證使用 mock API；真實供應商清單與回應仍取決於使用者的 OpenRouter API Key 和 endpoint 可用性。
-
-## 系統提示詞匯入
-
-- [x] 擴充 settings store，保存可批量匯入的系統提示詞
-- [x] 在設定頁加入 `.txt`／`.md` 多檔拖放匯入、清單與刪除
-- [x] 讓模型競技場與供應商比較可從提示詞庫套用系統提示詞
-- [x] 執行 build 與瀏覽器互動驗證
-
-## 本次功能回顧
-
-- 每個文字檔以檔名建立一筆提示詞，保存到既有 `llm-arena-settings` localStorage。
-- `ModelSlot` 只在競技場與供應商比較開啟提示詞庫選單，保留辯論頁原本行為。
-- build 與實際瀏覽器拖放、套用流程均通過。
-
-## 提示詞庫可見性修正
-
-- [x] 沒有已儲存提示詞時仍顯示提示詞庫
-- [x] 提供前往設定匯入的入口
-- [x] 執行 build 與瀏覽器畫面驗證
-
-## 本次修正回顧
-
-- 之前只有在提示詞已存在時才渲染選單，空狀態讓使用者誤以為功能不存在；現在保留 disabled 選單與設定連結。
-
-## 本次需求：競技場與供應商選擇
-
-- [x] 供應商比較允許只選 1 家供應商
-- [x] 競技場模型數量改為 2–15 的水平拉桿
-- [x] 競技場加入以第一個模型提示詞統一套用的按鈕
-- [x] 裁判模型移除提示詞庫選單
-- [x] 執行 build 與瀏覽器互動驗證
-
-## 本次需求回顧
-
-- 供應商比較保留至少 1 家的必要條件，移除至少 2 家限制。
-- 模型數量控制改用原生 range input，最大值為 15。
-- 統一提示詞直接複製第一個模型目前的系統提示詞；不另建提示詞選擇狀態。
-
-## 本次需求：強制暫停與競技場裁判
-
-- [x] 三個頁面加入可中止串流、保留輸入並可重新發送的強制暫停按鈕
-- [x] 競技場裁判收到每個比較模型的系統提示詞、問題與回答
-- [x] 強化競技場裁判預設提示詞，涵蓋一般任務與角色扮演品質
-- [x] 執行 TypeScript/build 驗證
-
-## 本次需求回顧
-
-- 使用共用 `DropZone` 顯示強制暫停，停止時取消現有請求並保留輸入；以執行編號避免舊請求污染重新發送的結果。
-- 競技場裁判的比較資料改為逐模型列出系統提示詞、同一問題與回答，並明確把候選內容視為資料。
-- 裁判預設提示詞改成依任務調整標準，加入角色扮演、創意、實用性與安全性評估。
-
-## 本次文件整理
-
-- [x] 重寫 README，反映目前功能、操作方式與實際架構
-- [x] 更新 CLAUDE.md 與 CONTEXT.md 的過時限制和文件連結
-- [x] 執行文件內容搜尋與 build 驗證
-
-## 本次文件整理回顧
-
-- README 已改為目前功能說明，包含 2–15 模型、1+ 供應商、提示詞庫、裁判資料、強制暫停和手機版路由。
-- 移除已刪除的 `Docs/DEVLOG.md` 文件引用，不新增替代日誌檔案。
-- `npm run build`、`git diff --check` 與文件一致性檢查均通過。
-
-## 本次需求：競技場重複回答與平均評分
-
-- [x] 增加 1–5 次重複回答設定並保存於競技場狀態／歷史
-- [x] 讓每個模型獨立產生多次回答，並可中止後重新發送
-- [x] 讓裁判逐次評分並計算每個模型的平均總分
-- [x] 更新結果顯示、文件與交接紀錄
-- [x] 執行 build、diff 檢查與最小資料流驗證
-
-## 本次需求回顧
-
-- 使用既有 `StreamingManager` 建立「模型 × 重複次數」的獨立串流任務；每個回答以 `ArenaAttempt` 保存，取消與舊回應防護沿用現有 `AbortController`。
-- 歷史新格式保存每次回答與重複次數，恢復時仍支援既有單次回答欄位。
-- 裁判收到所有嘗試後，依預設提示詞逐次評分並計算平均總分；自訂裁判提示詞仍可使用。
-
-## 本次需求：辯論起始方、裁判排版與 PDF 匯出
-
-- [x] 新增起始方設定，套用至辯論流程、恢復資料與歷史紀錄
-- [x] 將三位專科裁判並排，最終裁判放在下一列
-- [x] 完成辯論後可依辯論訊息順序與裁判順序下載 PDF
-- [x] 執行 build、diff 檢查與 PDF 產出／渲染驗證
-
-## 本次需求回顧
-
-- `startingSide` 由設定頁面狀態一路傳到 `DebateOrchestrator`，並向下相容舊的恢復資料與歷史紀錄。
-- 裁判區改用三欄 Grid，綜合裁判跨欄放在下一列。
-- `debate-pdf` 使用瀏覽器原生 Canvas 與 Blob 產生 A4 PDF，保留訊息陣列順序，再接續輸出四位裁判。
-- 驗證：`npm run build` 通過；Playwright mock 首兩次請求為反方、正方；PDF 下載成功，`pdfinfo` 顯示短內容 1 頁／長內容 13 頁 A4，`pdftoppm` 渲染無錯誤。
-
-## 本次需求：UI/UX 全面改版
-
-- [x] 建立設計 token（後改為使用者選定的石墨配色），修正 Markdown 沒有樣式的問題
-- [x] 三個執行頁改成「設定 → 結果 → 底部輸入區」，送出後自動收合設定
-- [x] 模型選單可搜尋 OpenRouter 全部模型；陣容記憶；新對話保留陣容
-- [x] 回應卡片顯示速度統計、可複製、重複回答分頁、並排／單欄切換
-- [x] 競技場排行榜與名次、辯論回合對照與比分、供應商價格表
-- [x] 側邊欄改為依模式顯示歷史，可搜尋、可收起
-- [x] 首次使用可直接貼金鑰，錯誤訊息改為行內且說明下一步
-
-## 本次需求回顧
-
-- 驗證：`tsc -b`、`vite build` 通過；Playwright mock 串流跑完三種模式、強制暫停、切頁回來、失敗模型、15 個模型、超長名稱、手機寬度，無 console 錯誤；PDF 用 `pdftoppm` 渲染確認版面正常；`impeccable detect` 0 個問題。
-- 順手修掉既有問題：`useThrottledContent` 在 StrictMode 下計時器被清掉卻沒歸零，開發模式的串流文字會卡到結束才出現。
-- 未驗證：真實 OpenRouter 串流（模型清單 API 有實際呼叫）、Firefox／Safari、實體手機。
-
-## 本次需求：過濾模型回應的 HTML
-
-- [x] 加入 `rehype-sanitize`，公式改為過濾後才畫出來
-- [x] 實測 iframe、script、事件屬性、外部圖片、蓋版內容、`javascript:` 連結都無效，排版與公式正常
-
-## 本次需求：修正辯論 PDF 匯出
-
-- [x] 內容有 `---`、`<br>`、任務清單或 `&nbsp;` 時匯出失敗：`innerHTML` 不是合法 XML，改用 `XMLSerializer`
-- [x] 超過一頁的回應被截掉（既有問題，修的時候才發現）：改為整份排版後在行與行之間切頁
-- [x] 驗證：10 種內容都能匯出；長內容從 4 頁變 17 頁，跨頁的段落、清單、表格與程式碼都接得上
-
-## 本次需求：升級有漏洞的套件、解除 PDF 的限制
-
-- [x] `npm audit` 0 個漏洞：升級 react-router-dom 7、katex 0.19、vite 7，移除未使用的 rehype-katex、remark-math
-- [x] PDF 文字可搜尋、選取（隱形文字層，MuPDF、PDFium、Poppler 都讀得到）
-- [x] PDF 公式用 KaTeX 正式字型；表格續頁重複表頭；過寬公式換行或縮小；超高表格列可跨頁；摺疊內容展開
-- [x] 每頁選無損或 JPEG 中較小者，長內容檔案約減半
-- [x] Chromium、Firefox、WebKit 都實測匯出；未測：實體 iOS Safari、Acrobat
-
-## 本次需求：修內容錯誤、儲存提示、CSP、載入速度、自動測試
-
-- [x] 程式碼裡的 `$` 和金額不再被當公式（畫面與 PDF）
-- [x] 歷史與設定存不進瀏覽器時顯示提示；匯入失敗不再顯示成功
-- [x] `vercel.json` 加 CSP，主題初始化移到獨立檔案
-- [x] 主程式從約 1.2 MB 降到 314 KB，Markdown 與 PDF 程式改成延後載入
-- [x] 新增 vitest，公式解析與 HTML 過濾共 47 個測試
+## 已知問題／刻意不處理
+- 背景執行只保證同一分頁；重新整理或關閉分頁會中斷請求（已收到的部分仍在歷史）。
+- 未實測：真實 OpenRouter 串流回應（模型清單 API 有實際呼叫）、實體手機、實體 iOS Safari、Acrobat 開 PDF。
+- Browserslist 資料過期的建置警告屬非阻塞，未處理。
